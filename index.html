@@ -1197,7 +1197,7 @@ async function exportarJuntos(cuales) {
           if (!col || c.length < 5) return;
           const de = titulo => col[titulo] === undefined ? "" : c[col[titulo]] || "";
           const ph = de("pH") !== "" && (de("pH") < 0 || de("pH") > 14) ? "" : de("pH");
-          const ntu = de("turbidez_V") !== "" && de("turbidez_V") <= 0.3 ? "" : de("turbidez_NTU");
+          const ntu = de("turbidez_V") !== "" && de("turbidez_V") <= 0.7 ? "" : de("turbidez_NTU");
           filas.push(quien.concat(de("fecha"), de("hora"), de("temperatura_C") <= -100 ? "" : de("temperatura_C"), ph, ntu,
                                   de("conductividad_uS"), de("latitud"), de("longitud"), de("origen")).join(";"));
         });

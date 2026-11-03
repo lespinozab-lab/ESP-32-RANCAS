@@ -723,8 +723,8 @@ void dibujarPantalla(unsigned long t) {
   //los cuatro valores como texto ("--" si no hay medicion)
   char v[4][10];
   bool hayTemp = numLectura && temp > -100;
-  if (numLectura && ph >= 0 && ph <= 14) snprintf(v[0], sizeof(v[0]), "%.2f", ph); else strcpy(v[0], "--");
-  if (numLectura && turbV > 0.3f) snprintf(v[1], sizeof(v[1]), "%.0f", ntu); else strcpy(v[1], "--");
+  if (numLectura && phValido()) snprintf(v[0], sizeof(v[0]), "%.2f", ph); else strcpy(v[0], "--");
+  if (numLectura && turbValida()) snprintf(v[1], sizeof(v[1]), "%.0f", ntu); else strcpy(v[1], "--");
   if (hayTemp) snprintf(v[2], sizeof(v[2]), "%.1f", temp); else strcpy(v[2], "--");
   if (!isnan(ce)) snprintf(v[3], sizeof(v[3]), "%.0f", ce); else strcpy(v[3], "--");
 

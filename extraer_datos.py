@@ -155,7 +155,7 @@ def a_excel(archivos):
         h, u = f"'{titulo}'", ultimas[titulo]
         f = comparacion.max_row + 1
         rango = lambda col: f"{h}!{col}2:{col}{u}"
-        valida = f'{rango("N")},"si",{rango("F")},">0.3"'   # turbidez medida con el modulo bien puesto
+        valida = f'{rango("N")},"si",{rango("F")},">0.7"'   # turbidez medida con el modulo bien puesto
         comparacion.append([
             titulo,
             f"=COUNTA({rango('A')})",
@@ -239,7 +239,7 @@ def a_excel(archivos):
         ("origen", None, "auto = guardado cada 20 s; boton = guardado al presionar el boton del equipo"),
         ("latitud, longitud", None, "Vacias cuando el GPS todavia no tenia ubicacion"),
         ("momento", None, "Fecha y hora juntas, para los graficos"),
-        ("Sensor sin conectar", None, "Temperatura -127, pH sobre 14 o turbidez_V por debajo de 0.3 no son mediciones: la hoja Comparacion no las cuenta"),
+        ("Sensor sin conectar", None, "Temperatura -127, pH sobre 14 o turbidez_V por debajo de 0.7 no son mediciones: la hoja Comparacion no las cuenta"),
     ]
     for linea in lineas:
         notas.append(linea)
