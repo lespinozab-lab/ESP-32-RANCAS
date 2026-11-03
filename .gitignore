@@ -8,3 +8,8 @@ claves_nube.h
 __pycache__/
 node_modules/
 build/
+# salen de capturas_simulacion.py, se regeneran
+simulacion_conexiones/*.png
+simulacion_conexiones/*.pdf
+# copia vieja de la pagina (la buena es index.html)
+mascota animada.html
