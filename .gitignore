@@ -1,6 +1,8 @@
 # claves reales: nunca a GitHub
 claves.h
 claves_nube.h
+# lo genera preparar_nube.py y trae la clave secreta de cada equipo
+nube/1_estructura_supabase.sql
 .env
 # generados / locales
 *.log
