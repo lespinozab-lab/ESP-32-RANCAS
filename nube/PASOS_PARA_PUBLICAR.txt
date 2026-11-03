@@ -1,0 +1,71 @@
+PAGINA PUBLICA DEL RIO SAN JUAN DE RANCAS - PASOS PARA PUBLICARLA
+=================================================================
+
+Que hay en esta carpeta
+-----------------------
+  publicar\                    La pagina que se sube a internet. SOLO esta carpeta se sube.
+  1_estructura_supabase.sql    Lo que se pega una sola vez en Supabase. NO lo subas ni lo compartas:
+                               tiene la clave secreta de cada equipo.
+  2_preparar_nube.bat          Conecta la pagina y los equipos con tu proyecto de Supabase.
+  preparar_nube.py             Lo que usa el .bat por dentro.
+
+Como funciona
+-------------
+  Cada equipo sube una lectura cada 20 segundos a una base de datos gratuita en internet (Supabase).
+  La pagina de la carpeta "publicar" lee esa base, asi que cualquiera la puede abrir desde cualquier
+  lugar, sin estar en el WiFi de los equipos. La pagina solo puede LEER: escribir lo puede hacer
+  unicamente cada equipo, con su clave secreta.
+
+
+PASO 1 - Crear el proyecto en Supabase (una sola vez, unos 5 minutos)
+----------------------------------------------------------------------
+  1. Entra a https://supabase.com y crea una cuenta gratuita ("Start your project").
+  2. Pulsa "New project":
+       - Name: rio-san-juan
+       - Database Password: inventa una y guardala (no me la mandes).
+       - Region: South America (Sao Paulo).
+     Pulsa "Create new project" y espera unos 2 minutos.
+
+PASO 2 - Crear las tablas (una sola vez)
+----------------------------------------
+  1. En el menu de la izquierda entra a "SQL Editor" y pulsa "New query".
+  2. Abre 1_estructura_supabase.sql con el Bloc de notas, copia TODO y pegalo ahi.
+  3. Pulsa "Run". Debe decir "Success. No rows returned".
+
+PASO 3 - Copiar la direccion y la clave publica
+-----------------------------------------------
+  En "Project Settings" (la tuerca, abajo a la izquierda) entra a "API" o "API Keys" y copia:
+    - Project URL   (es como https://abcdefghijk.supabase.co)
+    - la clave "anon public" o "publishable"  (es larga; esta SI se puede compartir: solo deja leer)
+
+PASO 4 - Conectar la pagina y los equipos
+-----------------------------------------
+  Doble clic en 2_preparar_nube.bat y pega la direccion y la clave cuando las pida.
+  Al terminar se abre la carpeta "publicar" ya conectada.
+  Tambien me la puedes pasar a mi en el chat y lo hago yo.
+
+PASO 5 - Subir el programa nuevo a los tres equipos
+---------------------------------------------------
+  Avisame y conecta cada equipo por USB. Antes de cargarlo bajo a la laptop todo lo que tienen
+  guardado (extraer_datos.bat), porque el programa nuevo reparte distinto la memoria del ESP32 y
+  lo guardado se borra.
+
+PASO 6 - Publicar la pagina (gratis)
+------------------------------------
+  1. Entra a https://app.netlify.com y crea una cuenta gratuita.
+  2. Pulsa "Add new project" > "Deploy manually".
+  3. Arrastra la carpeta "publicar" al recuadro.
+  4. Netlify te da una direccion como https://algo-raro-123.netlify.app. En "Project configuration" >
+     "Change project name" la puedes cambiar, por ejemplo a https://rio-san-juan-rancas.netlify.app
+  Esa direccion la abre cualquier persona, desde cualquier celular o computadora.
+  Cuando la pagina cambie, se vuelve a arrastrar la carpeta "publicar" en "Deploys".
+
+Para tener en cuenta
+--------------------
+  - Supabase gratis pausa el proyecto si pasa una semana sin uso. Mientras los equipos suban datos
+    no pasa; si se pausa, se reactiva con un boton en supabase.com.
+  - El plan gratis guarda hasta 500 MB: con los tres equipos subiendo cada 20 s alcanza para unos
+    10 meses de mediciones continuas.
+  - Si un equipo esta sin internet, lo que mide queda guardado en su memoria pero no sube a la nube.
+    Se puede bajar despues con extraer_datos.bat.
+  - La pagina que cada equipo entrega por su WiFi (http://riosanjuan.local) sigue funcionando igual.

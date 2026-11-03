@@ -1,0 +1,1496 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monitoreo del Río San Juan de Rancas</title>
+<style>
+  /* los dos colores del agua de cada pecera -> declarados asi, el cambio de un estado a otro se ve gradual */
+  @property --a { syntax: "<color>"; inherits: true; initial-value: #cfdbe0; }
+  @property --b { syntax: "<color>"; inherits: true; initial-value: #94a8b2; }
+  :root {
+    --fondo: #e8f4f6; --tarjeta: #ffffff; --borde: #c9dfe5; --texto: #11303c; --suave: #527079;
+    --rio: #083f52; --agua: #0b7285; --agua-claro: #def2f5;
+    --ok: #2b8a3e; --ok-claro: #e3f5e6; --mal: #c92a2a; --mal-claro: #fdecec;
+    --arena: #f1dfa9; --arena-borde: #d8c07a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--fondo); color: var(--texto);
+         font-family: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif; line-height: 1.4; }
+  .contenedor { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
+
+  /* cabecera: la franja del rio,las peceras se montan sobre su borde de abajo */
+  .rio { background: linear-gradient(135deg, #083f52, #0b7285); color: #fff; padding: 18px 0 66px; }
+  .rio .contenedor { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+  h1 { font-size: 1.6rem; font-weight: 800; margin: 0; text-wrap: balance; }
+  .sub { color: #cdeaf0; font-size: .92rem; margin-top: 3px; }
+  .lado { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: .85rem; }
+  .fuente { font-size: .82rem; font-weight: 700; padding: 6px 12px; border-radius: 999px; background: #ffe8a3; color: #5e3b00; white-space: nowrap; }
+  .fuente.local { background: #c6f0f5; color: #06404d; }
+  .fuente.nube { background: #d0f4d6; color: #1b5e2a; }
+  main.contenedor { margin-top: -50px; }
+
+  /* resumen general -> una frase que dice como estan los tres puntos */
+  .resumen { display: inline-flex; align-items: center; gap: 10px; margin-top: 10px; padding: 7px 16px 7px 11px; border-radius: 999px;
+             background: #fff; color: var(--suave); font-weight: 800; font-size: 1rem; text-wrap: balance; }
+  .resumen i { flex: none; width: 14px; height: 14px; border-radius: 50%; background: #adb5bd; }
+  .resumen.ok { color: var(--ok); }
+  .resumen.ok i { background: #40c057; box-shadow: 0 0 0 4px rgba(64,192,87,.25); }
+  .resumen.mal { color: var(--mal); }
+  .resumen.mal i { background: #fa5252; box-shadow: 0 0 0 4px rgba(250,82,82,.25); }
+
+  /* las tres peceras: una por punto del rio,con su mascota, la elegida muestra su detalle abajo */
+  .peceras { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 6px; }
+  .pecera { --a: #cfdbe0; --b: #94a8b2; display: flex; flex-direction: column; padding: 0; overflow: hidden; text-align: center;
+            border: 3px solid var(--rio); border-radius: 18px; background: #fff; color: var(--texto); font-size: 1rem;
+            transition: --a .8s, --b .8s; }
+  .pecera[data-estado="0"] { --a: #96e6ec; --b: #2aa9c0; }
+  .pecera[data-estado="1"] { --a: #fbeb93; --b: #efb23f; }
+  .pecera[data-estado="2"] { --a: #cdd0fc; --b: #7d72e0; }
+  .pecera[data-estado="3"] { --a: #dccba6; --b: #a88758; }
+  .pecera[aria-pressed="true"] { box-shadow: 0 0 0 4px #ffd43b; }
+  /* el agua, con unas plantas y unas piedras al fondo */
+  .agua { display: block; padding: 8px 8px 0;
+          background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 60'%3E%3Cpath d='M8 60C4 44 12 36 7 18 15 34 9 46 13 60Z' fill='%23158a55' opacity='.45'/%3E%3Cpath d='M20 60C17 48 25 40 21 26 29 40 23 50 26 60Z' fill='%231d9d63' opacity='.4'/%3E%3Cpath d='M31 60C29 52 35 46 33 38 39 48 34 54 36 60Z' fill='%23158a55' opacity='.35'/%3E%3C/svg%3E") left 3% bottom / 15% auto no-repeat,
+                      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 50 30'%3E%3Cellipse cx='18' cy='27' rx='16' ry='9' fill='%23556b74' opacity='.35'/%3E%3Cellipse cx='39' cy='28' rx='10' ry='6' fill='%23445960' opacity='.35'/%3E%3C/svg%3E") right 2% bottom / 20% auto no-repeat,
+                      linear-gradient(#ffffff59 0 5px, #fff0 5px), linear-gradient(var(--a), var(--b)); }
+  .rotulo { display: inline-flex; align-items: center; gap: 6px; padding: 3px 11px; border-radius: 999px; background: #ffffffd9;
+            font-size: .88rem; font-weight: 800; }
+  .rotulo i { width: 10px; height: 10px; border-radius: 50%; background: #adb5bd; }
+  .rotulo em { font-style: normal; }
+  .pecera.ok .rotulo i { background: #40c057; }
+  .pecera.mal .rotulo i { background: #fa5252; }
+  .pecera canvas { display: block; position: relative; z-index: 1; width: min(100%, 248px); margin: 2px auto -8px; image-rendering: pixelated; }
+  .animo { display: block; line-height: 28px; background: var(--arena); border-top: 3px solid var(--arena-borde);
+           font-size: .9rem; font-weight: 800; color: #5a4310; }
+  .mini { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 8px; padding: 8px 10px; font-size: .82rem; color: var(--suave);
+          font-variant-numeric: tabular-nums; }
+  .mini b { font-size: 1.05rem; color: var(--texto); }
+  .mini .fuera b { color: var(--mal); }
+  .pista { margin: 0 0 12px; text-align: center; }
+
+  /* los tres puntos a la vez: un cuadro con todos los datos, una columna por punto */
+  #todo { margin-bottom: 14px; }
+  #todo table { table-layout: fixed; }
+  #todo th, #todo td { text-align: center; white-space: normal; padding: 7px 6px; }
+  #todo thead th { padding: 0; }
+  #todo thead th:first-child, #todo tbody th { width: 30%; text-align: left; }
+  #todo thead button { width: 100%; padding: 8px 4px; border: 0; border-radius: 0; background: none; font-size: .88rem; font-weight: 800; }
+  #todo thead button[aria-pressed="true"] { box-shadow: inset 0 -4px 0 #ffd43b; }
+  #todo thead em { font-style: normal; }
+  #todo tbody th { padding-left: 8px; background: none; border-radius: 0; border-bottom: 1px solid var(--borde); font-size: .88rem; }
+  #todo tbody th small { display: block; font-size: .74rem; font-weight: 400; color: var(--suave); }
+  #todo td { font-size: 1.1rem; font-weight: 800; }
+  #todo td.dentro { background: var(--ok-claro); color: var(--ok); }
+  #todo td.fuera { background: var(--mal-claro); color: var(--mal); }
+  #todo td.vacia { font-weight: 400; color: var(--suave); }
+  #todo tr.tecnica td { font-size: .82rem; font-weight: 600; }
+  #todo td.elegida { box-shadow: inset 3px 0 0 #ffd43b, inset -3px 0 0 #ffd43b; }
+  #todo .chip { display: inline-block; line-height: 1.25; border-radius: 10px; }
+
+  /* aviso del punto elegido, con su explicacion en palabras sencillas */
+  .semaforo { display: flex; align-items: center; gap: 14px; padding: 14px 18px; margin-bottom: 14px; border-radius: 14px;
+              background: #fff; border: 1px solid var(--borde); box-shadow: 0 3px 0 var(--borde); }
+  .luces { flex: none; display: flex; gap: 8px; padding: 8px 10px; background: #22313a; border-radius: 999px; }
+  .luz { width: 22px; height: 22px; border-radius: 50%; background: #45555f; }
+  .semaforo:not(.mal):not(.gris) .luz.verde { background: #40c057; box-shadow: 0 0 0 4px rgba(64,192,87,.25); }
+  .semaforo.mal .luz.roja { background: #fa5252; box-shadow: 0 0 0 4px rgba(250,82,82,.25); }
+  .semaforo h2 { margin: 0; font-size: 1.25rem; font-weight: 800; color: var(--ok); text-wrap: balance; }
+  .semaforo.mal h2 { color: var(--mal); }
+  .semaforo.gris h2 { color: var(--suave); }
+  .semaforo p { margin: 2px 0 0; color: var(--suave); font-size: .92rem; }
+  .semaforo .explica { margin-top: 6px; color: var(--texto); font-size: .95rem; max-width: 75ch; }
+
+  /* comparacion de los tres puntos: un grafico por parametro con una linea por punto */
+  #comparacion { margin-bottom: 14px; }
+  .leyenda { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: .88rem; font-weight: 700; margin-bottom: 10px; }
+  .leyenda i, .ultimos i { display: inline-block; width: 14px; height: 4px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+  .graficos { display: grid; grid-template-columns: repeat(auto-fit, minmax(225px, 1fr)); gap: 14px 20px; }
+  .graf h4 { margin: 0; font-size: .92rem; }
+  .ultimos { display: flex; gap: 12px; margin: 2px 0; font-size: .82rem; font-weight: 600; color: var(--texto); font-variant-numeric: tabular-nums; }
+  .ultimos i { width: 10px; margin-right: 4px; }
+  svg.comparado { width: 100%; height: auto; display: block; }
+  svg.comparado text { font-size: 9px; fill: var(--suave); }
+
+  /* secciones para exponer: registro por dias, norma, mapa, exportar y la explicacion */
+  .seccion { margin-bottom: 14px; }
+  .rango, .exportar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; align-items: center; }
+  .rango button[aria-pressed="true"] { background: var(--rio); color: #fff; border-color: var(--rio); }
+  #norma td, #norma th, #resumenTabla td, #resumenTabla th { text-align: center; white-space: normal; }
+  #norma td:first-child, #norma th:first-child, #resumenTabla td:first-child, #resumenTabla th:first-child { text-align: left; }
+  #norma small { display: block; font-size: .74rem; color: var(--suave); }
+  #mapa { height: 320px; border-radius: 10px; border: 1px solid var(--borde); margin-top: 8px; }
+  .exportar .boton { margin-top: 0; }
+  dialog { width: min(660px, 92vw); border: 0; border-radius: 16px; padding: 22px 24px; color: var(--texto); }
+  dialog::backdrop { background: #083f52b3; }
+  dialog h2 { margin: 0 0 8px; font-size: 1.3rem; color: var(--rio); }
+  dialog h3 { margin: 14px 0 4px; }
+  dialog p, dialog li { margin: 4px 0; font-size: .95rem; }
+  dialog ul { margin: 0; padding-left: 20px; }
+  .solo-impreso { display: none; }
+
+  /* tarjetas de cada parametro */
+  .rejilla { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; margin-bottom: 14px; }
+  .tarjeta { background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 14px; padding: 14px 16px;
+             box-shadow: 0 3px 0 var(--borde); }
+  .rejilla .tarjeta { border-top: 5px solid var(--c); }
+  .nombre { font-size: .95rem; font-weight: 700; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .valor { font-size: 2.4rem; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.2; margin-top: 2px; }
+  .valor small { font-size: 1rem; font-weight: 600; color: var(--suave); margin-left: 4px; }
+  .medidor { position: relative; height: 10px; border-radius: 5px; margin: 10px 0 8px; }
+  .medidor i { position: absolute; top: -4px; bottom: -4px; border: 2px solid var(--texto); border-radius: 7px; }
+  .medidor b { position: absolute; top: -6px; bottom: -6px; width: 6px; margin-left: -3px; border-radius: 3px;
+               background: var(--texto); border: 1px solid #fff; }
+  .limite { font-size: .8rem; color: var(--suave); min-height: 1.2em; }
+  .chip { font-size: .72rem; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: var(--ok-claro); color: var(--ok); }
+  .chip.mal { background: var(--mal-claro); color: var(--mal); }
+  .chip.gris { background: #e6edf0; color: var(--suave); }
+  svg.linea { width: 100%; height: 56px; display: block; margin-top: 8px; }
+
+  .dos { display: grid; grid-template-columns: 2fr 1fr; gap: 14px; }
+  .dos > *, .rejilla > *, .peceras > *, .graficos > * { min-width: 0; }
+  h3 { margin: 0 0 10px; font-size: 1.05rem; color: var(--agua); }
+  .tabla-caja { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: .88rem; font-variant-numeric: tabular-nums; }
+  th, td { text-align: right; padding: 7px 8px; border-bottom: 1px solid var(--borde); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  th { background: var(--agua-claro); color: var(--texto); font-weight: 700; font-size: .8rem; border-bottom: 0; }
+  th:first-child { border-radius: 8px 0 0 8px; }
+  th:last-child { border-radius: 0 8px 8px 0; }
+  .estado-lista { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; font-size: .9rem; }
+  .estado-lista li { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  a { color: var(--agua); }
+  button, .boton { font: inherit; font-size: .85rem; font-weight: 600; padding: 7px 12px; border-radius: 8px; border: 1px solid var(--borde);
+           background: var(--tarjeta); color: var(--texto); cursor: pointer; }
+  button:hover, .boton:hover { border-color: var(--agua); }
+  button:focus-visible, a:focus-visible { outline: 3px solid #ffd43b; outline-offset: 2px; }
+  .lado button { border-radius: 999px; border: 0; padding: 6px 12px; }
+  .boton { display: inline-block; text-decoration: none; margin-top: 12px; }
+  [hidden] { display: none !important; }
+  /* vista sencilla: nomas las peceras y el aviso, lo tecnico se guarda */
+  .sencilla .tecnica { display: none !important; }
+  footer { color: var(--suave); font-size: .8rem; margin: 18px 0 8px; text-align: center; }
+
+  @media (max-width: 780px) {
+    .dos { grid-template-columns: 1fr; }
+    h1 { font-size: 1.25rem; }
+    .valor { font-size: 2rem; }
+    /* en el celular las tres peceras siguen lado a lado, mas apretadas */
+    .contenedor { padding: 0 10px; }
+    .peceras { gap: 6px; }
+    .pecera { border-width: 2px; border-radius: 12px; }
+    .agua { padding: 6px 2px 0; }
+    .rotulo { font-size: .7rem; padding: 2px 7px; gap: 4px; }
+    .rotulo em { display: none; }
+    .rotulo i { width: 8px; height: 8px; }
+    .animo { font-size: .72rem; line-height: 22px; border-top-width: 2px; }
+    .mini { grid-template-columns: 1fr; padding: 6px 2px; font-size: .7rem; }
+    .mini b { font-size: .9rem; }
+    .resumen { font-size: .9rem; border-radius: 16px; }
+    .semaforo { padding: 12px; gap: 10px; }
+    .semaforo h2 { font-size: 1.05rem; }
+    #todo { padding: 12px 8px; }
+    #todo thead em { display: none; }
+    #todo thead button { font-size: .74rem; }
+    #todo tbody th { font-size: .8rem; padding-left: 4px; }
+    #todo td { font-size: .95rem; }
+    #todo tr.tecnica td { font-size: .72rem; }
+    #todo .chip { padding: 3px 6px; font-size: .68rem; }
+  }
+
+  /* informe para imprimir o guardar en PDF: sale todo, sin botones, aunque este puesta la vista sencilla */
+  @media print {
+    body { background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .lado, .pista, .rango, #exportar, #mapaCaja, dialog { display: none !important; }
+    .sencilla .tecnica { display: revert !important; }
+    .solo-impreso { display: block; margin: 0 0 8px; font-size: .9rem; }
+    .rio { padding-bottom: 20px; }
+    main.contenedor { margin-top: 12px; }
+    .tarjeta, .pecera, .semaforo, .graf { break-inside: avoid; box-shadow: none; }
+  }
+</style>
+</head>
+<body>
+<header class="rio">
+  <div class="contenedor">
+    <div>
+      <h1>Monitoreo del Río San Juan de Rancas</h1>
+      <div class="sub">Sistema IoT de parámetros fisicoquímicos del agua · <span id="equipo">3 puntos de monitoreo</span> · Actualizado <span id="hora">--:--:--</span></div>
+      <div class="resumen" id="resumen" aria-live="polite"><i></i><span id="resumenTexto">Conectando con los equipos</span></div>
+    </div>
+    <div class="lado">
+      <span id="simular" class="lado" hidden>Simular en el punto elegido
+        <button data-s="1">pH bajo</button><button data-s="2">pH alto</button><button data-s="3">Agua turbia</button><button data-s="4">Sin señal</button><button data-s="5">Sin sensores</button>
+      </span>
+      <button id="acerca">¿De qué trata?</button>
+      <button id="vista">Ver vista sencilla</button>
+      <span class="fuente" id="fuente">Datos simulados</span>
+    </div>
+  </div>
+</header>
+
+<main class="contenedor">
+  <p class="solo-impreso" id="fechaInforme"></p>
+  <section class="peceras" id="peceras" aria-label="Los tres puntos de monitoreo"></section>
+  <p class="limite pista">Toca un punto para ver su detalle.</p>
+
+  <section class="tarjeta" id="todo">
+    <h3>Los tres puntos a la vez</h3>
+    <table>
+      <thead><tr id="todoPuntos"><th></th></tr></thead>
+      <tbody id="todoFilas"></tbody>
+    </table>
+  </section>
+
+  <section class="semaforo gris" id="semaforo" aria-live="polite">
+    <div class="luces" aria-hidden="true"><span class="luz roja"></span><span class="luz verde"></span></div>
+    <div>
+      <h2 id="semTitulo">Conectando con el equipo</h2>
+      <p id="semDetalle">Todavía no llegó ningún dato.</p>
+      <p class="explica" id="explica"></p>
+    </div>
+  </section>
+
+  <section class="tarjeta tecnica" id="comparacion">
+    <h3>Comparación de los tres puntos</h3>
+    <div class="leyenda" id="leyenda"></div>
+    <div class="graficos" id="graficos"></div>
+    <p class="limite" style="margin:10px 0 0">Cada línea es un punto del río y la franja verde, el rango permitido. Al lado de cada título va el último valor de cada punto.</p>
+  </section>
+
+  <section class="tarjeta seccion tecnica" id="registro">
+    <h3>Registro por días, semanas y meses</h3>
+    <div class="rango" id="rango">
+      <button data-h="24">Último día</button><button data-h="168">Última semana</button><button data-h="720">Último mes</button><button data-h="0">Todo</button>
+      <span class="limite" id="registroNota"></span>
+    </div>
+    <div class="graficos" id="registroGraficos"></div>
+    <div class="tabla-caja" style="margin-top:10px">
+      <table id="resumenTabla">
+        <thead><tr><th>En ese periodo</th><th>Horas con datos</th><th>pH promedio</th><th>pH mínimo y máximo</th><th>Turbidez promedio</th><th>Turbidez máxima</th><th>Temperatura promedio</th><th>Conductividad promedio</th></tr></thead>
+        <tbody id="resumenFilas"></tbody>
+      </table>
+    </div>
+    <p class="limite" style="margin:10px 0 0">Cada equipo guarda un resumen por hora en su memoria. El último día y la última semana se ven hora por hora; el mes y todo, día por día.</p>
+  </section>
+
+  <section class="tarjeta seccion tecnica" id="norma">
+    <h3>¿Cumple la norma?</h3>
+    <div class="tabla-caja">
+      <table>
+        <thead><tr id="normaPuntos"><th>Estándar de Calidad Ambiental para agua (D.S. 004-2017-MINAM)</th></tr></thead>
+        <tbody id="normaFilas"></tbody>
+      </table>
+    </div>
+    <p class="limite" style="margin:10px 0 0">Se compara la lectura de este momento. La conductividad todavía no está calibrada con una solución patrón: su resultado es referencial.
+      La norma también fija la temperatura (no más de 3 °C sobre lo habitual del río), que no se puede juzgar con una sola lectura.</p>
+  </section>
+
+  <section class="tarjeta seccion tecnica" id="mapaSeccion">
+    <h3>Dónde está cada punto</h3>
+    <p class="limite" id="mapaNota">Esperando la ubicación de los equipos.</p>
+    <div id="mapaCaja" hidden><div id="mapa"></div></div>
+  </section>
+
+  <h3 class="tecnica" id="tituloDetalle">Detalle del punto</h3>
+  <section class="rejilla tecnica" id="tarjetas"></section>
+
+  <section class="dos tecnica">
+    <div class="tarjeta">
+      <h3 id="tituloTabla">Últimas lecturas</h3>
+      <div class="tabla-caja">
+        <table>
+          <thead><tr><th>Hora</th><th>Temp. (°C)</th><th>pH</th><th>Turbidez (NTU)</th><th>Cond. (µS/cm)</th><th>Estado</th></tr></thead>
+          <tbody id="filas"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="tarjeta">
+      <h3>Estado del equipo</h3>
+      <ul class="estado-lista" id="estado"></ul>
+      <p class="limite" style="margin-top:12px">Ubicación: <span id="ubicacion">sin dato de GPS</span></p>
+      <p class="limite" id="direccion" hidden></p>
+      <a class="boton" id="descarga" href="/datos.csv" hidden>Descargar datos guardados (CSV)</a>
+    </div>
+  </section>
+
+  <section class="tarjeta seccion" id="exportar">
+    <h3>Exportar</h3>
+    <div class="exportar">
+      <button id="juntos">Descargar los 3 puntos en un archivo (Excel)</button>
+      <span id="porPunto"></span>
+      <button id="imprimir">Imprimir informe o guardarlo en PDF</button>
+    </div>
+    <p class="limite" id="exportarNota">El archivo de los 3 puntos trae una columna que dice de qué punto es cada fila.</p>
+  </section>
+
+  <dialog id="queEs">
+    <h2>¿De qué trata esta página?</h2>
+    <p>Muestra en vivo cómo está el agua del río San Juan de Rancas en tres puntos. En cada punto hay un equipo con sensores dentro del agua
+       que mide cada 2 segundos y manda sus lecturas a esta página por WiFi.</p>
+    <h3>Qué mide cada equipo</h3>
+    <ul>
+      <li><b>pH:</b> qué tan ácida o alcalina está el agua. Lo permitido es entre 6.5 y 8.5.</li>
+      <li><b>Turbidez:</b> qué tan turbia está, por la tierra o los sólidos que lleva. Se avisa sobre 100 NTU.</li>
+      <li><b>Temperatura</b> del agua.</li>
+      <li><b>Conductividad:</b> cuántas sales disueltas lleva.</li>
+    </ul>
+    <h3>Cómo leerla</h3>
+    <ul>
+      <li>Cada punto tiene su mascota: el ajolote (punto 1), la nutria (punto 2) y el pingüino (punto 3).</li>
+      <li>Si la mascota está contenta y el agua de su pecera es celeste, el agua está dentro de lo permitido.</li>
+      <li>Si tiembla (agua amarilla), el pH está bajo; si está mareada (agua lila), el pH está alto; si está triste y sucia (agua marrón), el agua está turbia.</li>
+      <li>Si mira con un signo de pregunta (agua gris), ese equipo no está midiendo.</li>
+      <li>El cuadro «Los tres puntos a la vez» junta todos los valores; lo que sale en rojo está fuera de lo permitido.</li>
+    </ul>
+    <h3>Con qué se compara</h3>
+    <p>Con el Estándar de Calidad Ambiental para agua del Perú (D.S. 004-2017-MINAM), Categorías 3 y 4, que son las del río San Juan.</p>
+    <h3>Qué no es</h3>
+    <p>Es un prototipo hecho por estudiantes de la Universidad Nacional Daniel Alcides Carrión (Proyecto de Innovación Formativa 2026).
+       Sirve como alerta temprana: no reemplaza un análisis de laboratorio.</p>
+    <p style="margin-top:14px;text-align:right"><button id="cerrarQueEs">Entendido</button></p>
+  </dialog>
+
+  <footer>
+    Proyecto de Innovación Formativa 2026 · Universidad Nacional Daniel Alcides Carrión<br>
+    Equipo prototipo hecho por estudiantes: sus lecturas sirven de alerta temprana y no reemplazan un análisis de laboratorio.<br>
+    Referencias del ECA para agua (D.S. 004-2017-MINAM): pH 6.5 a 8.5 (Categoría 3) ·
+    turbidez 100 NTU, referencial (Categoría 1-A2; las Categorías 3 y 4 no fijan turbidez) ·
+    conductividad 1000 µS/cm (Categoría 4) y 2500 µS/cm (Categoría 3)
+  </footer>
+</main>
+
+<script>
+// ---------------- configuracion ----------------
+// fuente puede ser "demo" (datos simulados), "local" (los ESP32 en la misma red) o "nube" (base de datos en internet)
+//la copia que va dentro de los equipos sale con "local" (la cambia actualizar_pagina.py)
+// para ver un equipo real desde la PC sin tocar nada: index.html?equipo=192.168.4.1
+const CONFIG = {
+  fuente: "demo",
+  equipo: "",  // vacio = el mismo equipo que entrega la pagina
+  urlNube: "",   // etapa 3 -> la direccion del proyecto de Supabase (la pone nube/preparar_nube.py)
+  clavePublica: "",    //y su clave publica, que solo deja leer
+  cadaMs: 2000,
+  maxPuntos: 150  // lecturas que se guardan de cada punto mientras la pagina esta abierta -> 5 minutos
+};
+const LIMITES = { ph: [6.5, 8.5], ntu: [0, 100] };
+//escala y tinte son la barra de color de cada tarjeta: de donde a donde va y que colores recorre
+const PARAMETROS = [
+  { id: "temp", nombre: "Temperatura", unidad: "°C", dec: 1, color: "#e8590c", escala: [0, 25], tinte: "#4dabf7,#ffe066,#ff6b35",
+    limite: "Sin límite fijado" },
+  { id: "ph",   nombre: "pH",          unidad: "",   dec: 2, color: "#0b7285", escala: [0, 14], tinte: "#e03131,#f59f00,#ffe066,#51cf66,#22b8cf,#4263eb,#7048e8",
+    limite: "Rango permitido: 6.5 a 8.5" },
+  { id: "ntu",  nombre: "Turbidez",    unidad: "NTU", dec: 0, color: "#7048e8", escala: [0, 300], tinte: "#bfeef5,#d9bf8f,#8a5a2b",
+    limite: "Alerta sobre 100 NTU (referencial) · el sensor mide hasta 3000" },
+  { id: "ce",   nombre: "Conductividad", unidad: "µS/cm", dec: 0, color: "#2b8a3e", escala: [0, 2500], tinte: "#d8f5a2,#40c057,#0b7285",
+    limite: "ECA: 1000 (Cat. 4) y 2500 (Cat. 3) · sin calibrar, mide de 120 a 2200" }
+];
+
+const ETIQUETAS = {
+  demo:  ["Etapa 1 · Datos simulados", ""],
+  local: ["Etapa 2 · Equipos en red local", "local"],
+  nube:  ["Etapa 3 · Datos desde la nube", "nube"]
+};
+
+// lo q significa cada situacion, en palabras sencillas, las cuatro primeras van en el orden de los estados
+//del agua (bien, pH bajo, pH alto, turbia), las otras dos son pa cuando no hay medicion
+const EXPLICA = [
+  "Lo que mide este equipo está dentro de lo que permite la norma peruana para el agua de un río.",
+  "El agua está más ácida de lo permitido. El agua ácida daña a los peces y a las plantas; conviene tomar una muestra para confirmarlo en un laboratorio.",
+  "El agua está más alcalina de lo permitido, como cuando lleva cal o detergente. Conviene tomar una muestra para confirmarlo en un laboratorio.",
+  "El agua está turbia: lleva tierra, lodo u otros sólidos. Pasa después de las lluvias o cuando hay una descarga río arriba."
+];
+const SIN_MEDICION = {
+  senal: "No llega información de este equipo. Tiene que estar encendido y conectado al mismo WiFi que este celular o computadora.",
+  sensores: "El equipo está encendido y responde, pero sus sensores de pH y de turbidez no están conectados o no dan una lectura válida."
+};
+
+// los tres puntos del rio, cada uno es un equipo con su mascota, la pagina la entrega cualquiera de ellos
+// ("propio") y ese le dice a la pagina en que direccion estan los otros dos
+const MASCOTAS = ["Ajolote", "Nutria", "Pingüino"];
+const TRAZOS = ["#d6336c", "#9a6234", "#3f5677"];  // el color de la linea de cada punto en los graficos
+const nodos = MASCOTAS.map((mascota, i) => ({
+  i, mascota, titulo: "Punto " + (i + 1) + " · " + mascota,
+  base: null,  // direccion del equipo: null = todavia no se sabe, "" = el q entrega la pagina
+  historial: [], ultimaN: null, fallos: 0, dato: null,
+  alertas: null,    // null = sin medicion, [] = agua bien, con dos alertas a la vez se van turnando,como en el equipo
+  motivo: "senal",  //x que no hay medicion -> "senal" (el equipo no contesta) o "sensores" (contesta, pero no mide)
+  problemas: [], animoVisto: -1,
+  sim: { temp: [10.8, 11.5, 9.9][i], ph: [7.6, 7.3, 7.9][i], ntu: [22, 30, 15][i], ce: [350, 420, 290][i] },
+  simulado: { tipo: 0, quedan: 0 }  // 1 pH bajo, 2 pH alto, 3 agua turbia, 4 sin respuesta, 5 sin sensores, quedan = lecturas que dura
+}));
+let modo = "demo";
+let propio = 0;    //el equipo que entrega la pagina
+let elegido = 0;  //el punto que se ve en detalle
+
+// ---------------- mascotas ----------------
+//las tres mascotas de las pantallas de los equipos, a color, son los mismos dibujos de
+// equipo_iot_etapa2/pantalla.h (y de simulador_pantalla.py), con las mismas formas y medidas, lo que cambia
+// es que cada forma se pinta con un color de la paleta en vez de encender o apagar puntos
+//si se cambia el dibujo alla, hay que pasarlo tambien aqui
+const AGUA_BIEN = 0, PH_BAJO = 1, PH_ALTO = 2, AGUA_TURBIA = 3, SIN_DATO = 4;
+const AJOLOTE = 0, NUTRIA = 1, PINGUINO = 2;
+const ANIMOS = ["Agua bien", "pH bajo", "pH alto", "Agua turbia", "Sin dato"];
+const MW = 62, MH = 56;  // puntos del dibujo, la pagina lo muestra hasta 4 veces mas grande
+const PRINCIPAL = 1, SOMBRA = 2, CLARO = 3, ACENTO = 4, VENA = 5, TINTA = 6, MEJILLA = 7, BLANCO = 8, BARRO = 9, LAGRIMA = 10, ACIDO = 11, BRILLO = 12, LENGUA = 13;
+//un color por numero, en el mismo orden de la linea de arriba (el 0 es transparente), los seis primeros
+// son de cada mascota: color principal, sombra,claro, acento, acento claro y contorno, para repintarlas se cambia aqui
+const aColor = h => { const n = parseInt(h, 16); return (0xff000000 | (n & 255) << 16 | (n & 0xff00) | n >> 16) >>> 0; };
+const COMUNES = ["ff5c8a", "ffffff", "6b4a2b", "339af0", "d9480f", "fff3a3", "c2255c"];
+const PALETAS = [["f9a3c0", "e5749d", "ffd6e3", "d6336c", "ff9dbd", "4a1836"],  // ajolote: rosa con branquias magenta
+                 ["c08a55", "8a5a34", "f6e2be", "4b2e17", "dcab7c", "36210f"],    //nutria -> cabeza parda clara, cuerpo mas oscuro, hocico y barriga crema
+                 ["3f5677", "2a3b57", "f6fbff", "ff9f1c", "6b82a6", "151d2e"]]  //pinguino: azul oscuro, frente blanca, pico y patas naranjas
+  .map(p => new Uint32Array([0].concat(p.concat(COMUNES).map(aColor))));
+const CENTROS = [[32, 20], [24, 16], [29, 16]];  // donde va el centro de la cabeza de cada una
+// donde va la cara, contado desde el centro de la cabeza:
+// ojo izquierdo x,ojo derecho x, ojos y, boca x, boca y,mejilla izquierda x, mejilla derecha x, mejillas y
+const CARAS = [[-8, 9, 0, 1, 6, -12, 10, 5], [-8, 8, -1, 1, 4, 0, 0, 0], [-7, 7, 0, 0, 1, -11, 8, 3]];
+
+const lienzo = new Uint8Array(MW * MH);   //un numero de color por punto
+const red = v => Math.floor(v + 0.5);
+
+function punto(x, y, c) { x |= 0; y |= 0; if (x >= 0 && x < MW && y >= 0 && y < MH) lienzo[y * MW + x] = c; }
+function caja(x, y, w, h, c) { for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) punto(x + i, y + j, c); }
+function disco(cx, cy, r, c) {
+  for (let j = -r; j <= r; j++) for (let i = -r; i <= r; i++) if (i * i + j * j <= r * r + r * 0.6) punto(cx + i, cy + j, c);
+}
+function elipse(cx, cy, rx, ry, c) {
+  for (let j = -(ry | 0); j <= (ry | 0); j++) for (let i = -(rx | 0); i <= (rx | 0); i++)
+    if (i * i / (rx * rx) + j * j / (ry * ry) <= 1) punto(cx + i, cy + j, c);
+}
+function recta(x0, y0, x1, y1, c) {
+  const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+  for (let e = dx + dy; ; ) {
+    punto(x0, y0, c);
+    if (x0 === x1 && y0 === y1) break;
+    const e2 = 2 * e;
+    if (e2 >= dy) { e += dy; x0 += sx; }
+    if (e2 <= dx) { e += dx; y0 += sy; }
+  }
+}
+// mancha redonda con centro y radio con decimales -> asi las formas se mueven suave
+function mancha(cx, cy, r, c) {
+  if (r < 0.4) return;
+  if (r < 1) { punto(red(cx), red(cy), c); return; }
+  for (let j = Math.floor(cy - r); j <= Math.ceil(cy + r); j++)
+    for (let i = Math.floor(cx - r); i <= Math.ceil(cx + r); i++)
+      if ((i - cx) * (i - cx) + (j - cy) * (j - cy) <= r * r) punto(i, j, c);
+}
+// tira curva q va de (x0,y0) a (x2,y2) pasando cerca de (x1,y1), y cambia de grosor de r0 a r2
+function tira(x0, y0, x1, y1, x2, y2, r0, r2, c, panza = 0) {
+  const n = Math.floor(Math.abs(x2 - x0) + Math.abs(y2 - y0) + Math.abs(x1 - x0) + Math.abs(y1 - y0)) + 2;
+  for (let k = 0; k <= n; k++) {
+    const s = k / n, a = (1 - s) * (1 - s), b = 2 * s * (1 - s), q = s * s;
+    mancha(a * x0 + b * x1 + q * x2, a * y0 + b * y1 + q * y2, r0 + (r2 - r0) * s + panza * Math.sin(Math.PI * s), c);
+  }
+}
+// dibujito de pocos puntos: cada nro es una fila y el bit mas alto es el punto de la izquierda
+function sello(x, y, filas, ancho, c, espejo, giro = 0) {
+  filas.forEach((fila, j) => {
+    for (let i = 0; i < ancho; i++) if (fila >> (ancho - 1 - i) & 1) {
+      let a = espejo ? ancho - 1 - i : i, b = j;
+      for (let g = 0; g < giro; g++) [a, b] = [ancho - 1 - b, a];   // cuartos de vuelta (dibujos cuadrados)
+      punto(x + a, y + b, c);
+    }
+  });
+}
+const OJO_FELIZ = [0b0111110, 0b1100011, 0b1000001];  //arco hacia arriba: ojo cerrado, sonriendo
+const OJO_TRISTE = [0b1000001, 0b1100011, 0b0111110];
+const OJO_APRETADO = [0b11000, 0b00110, 0b00001, 0b00110, 0b11000];
+const OJO_MAREADO = [0b0011100, 0b0100010, 0b1001101, 0b1010001, 0b1010010, 0b0001100, 0];  //espiral
+const BRAZO = [0b10000, 0b10000, 0b10001, 0b10001, 0b01110];   //bracito recogido (el izquierdo)
+const DESTELLO = [0b0001000, 0b0001000, 0b0011100, 0b1110111, 0b0011100, 0b0001000, 0b0001000];
+const DESTELLO_CHICO = [0b010, 0b111, 0b010];
+const GOTA = [0b010, 0b010, 0b111, 0b111, 0b010];
+const BURBUJA = [0b01110, 0b10001, 0b10001, 0b10001, 0b01110];
+const BURBUJA_CHICA = [0b010, 0b101, 0b010];
+const PREGUNTA = [0b01110, 0b10001, 0b00001, 0b00010, 0b00100, 0, 0b00100];
+const OJO_FELIZ_CHICO = [0b01110, 0b10001, 0b10001];    // el arco de los ojos del pinguino
+const NARIZ = [0b0111110, 0b1111111, 0b0111110, 0b0011100];    // la nariz ancha de la nutria
+const PATITAS = [0b0011100, 0b0100010, 0b0100010, 0b0100010];    // las patas de la nutria, recogidas sobre la barriga
+const PICO = [0b01110, 0b11111];    // la parte de arriba del pico
+//branquias del ajolote: base x,y,punta x,y y grosor, medidos desde el centro de la cabeza
+const BRANQUIAS = [[-12, -7, -22, -13, 1.5], [-14, 0, -25, -1, 1.6], [-12, 7, -20, 10, 1.5],
+                   [11, -9, 15, -13, 1.4], [14, -3, 22, -6, 1.3], [14, 4, 20, 6, 1.3]];
+
+//el movimiento de cada estado del agua es el mismo pa las tres mascotas
+function pose(est, cx, cy, t) {
+  const sin = Math.sin, tf = t % 1048576;
+  let sube = 1.2 * sin(tf / 450), mueve = 0;   //flota
+  // inc: cabeza ladeada (+1 sube el lado derecho),caida y onda -> branquias, orejas o aletas, paso: que pata estira
+  const p = { tf, inc: 0, caida: 0, onda: 0.22, colea: sin(tf / 260) * 1.5, paso: 1, saluda: false, brazoI: null, brazoD: null };
+  if (est === AGUA_BIEN) {
+    const f = tf / 330;
+    sube = -Math.abs(sin(f)) * 2.2;    // baila a brinquitos
+    p.inc = Math.floor(f / Math.PI) % 2 === 0 ? 1 : -1;   //y ladea la cabeza a cada brinco
+    p.paso = p.inc; p.colea = sin(tf / 150) * 2.5; p.saluda = t % 5200 < 1700;
+  } else if (est === PH_BAJO) {
+    mueve = red(sin(tf / 35)); sube = 0;   //tiembla
+    p.caida = 0.55; p.onda = 0.05; p.colea = 3 + sin(tf / 40) * 0.6; p.paso = 0;
+  } else if (est === PH_ALTO) {
+    mueve = sin(tf / 420) * 2.4;    //se tambalea, mareado
+    p.inc = mueve > 1 ? -1 : mueve < -1 ? 1 : 0; p.onda = 0.32; p.paso = p.inc;
+  } else if (est === AGUA_TURBIA) {
+    sube = 1 + 0.5 * sin(tf / 700);   // decaido
+    p.caida = 0.6; p.onda = 0.04; p.colea = 4; p.paso = 0;
+  } else p.inc = Math.floor(t / 2400) % 2 === 0 ? 1 : 0;    //sin dato -> ladea la cabeza, curioso
+  p.cx = cx + red(mueve); p.cy = cy + red(sube);
+  p.cg = Math.cos(p.inc * 0.1); p.sg = sin(p.inc * 0.1);
+  // brazos: null = recogido,un numero = estirado, con la mano a esa altura
+  if (p.saluda) p.brazoD = -5 + sin(tf / 110) * 2;
+  if (est === PH_BAJO) p.brazoI = p.brazoD = -2 + sin(tf / 40);
+  if (est === PH_ALTO) { p.brazoI = sin(tf / 200) * 4 - 1; p.brazoD = -p.brazoI - 2; }
+  return p;
+}
+
+function cuerpoAjolote(est, p) {
+  const { cx, cy, tf } = p, sin = Math.sin, cos = Math.cos;
+
+  // cola: una hoja hacia la izquierda con su borde interior
+  [[0, PRINCIPAL], [2, SOMBRA], [3, CLARO]].forEach(([dr, c]) =>
+    tira(cx - 7, cy + 25, cx - 15, cy + 25.5 + p.colea * 0.4, cx - 22, cy + 22.5 + p.colea, 4.6 - dr, 1.8 - dr, c, 0.9));
+
+  //branquias: tres hojas por lado, con su vena clara
+  BRANQUIAS.forEach(([bx, by, tx, ty, r], k) => {
+    const a = (bx < 0 ? -1 : 1) * p.caida + p.onda * sin(tf / 280 + k * 1.3), dx = tx - bx, dy = ty - by;
+    tx = bx + dx * cos(a) - dy * sin(a); ty = by + dx * sin(a) + dy * cos(a);
+    [bx, by] = [bx * p.cg + by * p.sg, by * p.cg - bx * p.sg];  // la cabeza ladeada las lleva consigo
+    [tx, ty] = [tx * p.cg + ty * p.sg, ty * p.cg - tx * p.sg];
+    tira(cx + bx, cy + by, cx + (bx + tx) / 2, cy + (by + ty) / 2, cx + tx, cy + ty, r, r, ACENTO, r);
+    tira(cx + bx, cy + by, cx + (bx + tx) / 2, cy + (by + ty) / 2, cx + tx, cy + ty, 0.5, 0.5, VENA);
+  });
+
+  // patas: una estirada y la otra recogida, al bailar se turnan
+  if (p.paso > 0) {
+    tira(cx - 1, cy + 26, cx - 1, cy + 28, cx - 1, cy + 30, 1.9, 1.7, SOMBRA);
+    tira(cx + 9, cy + 25, cx + 10, cy + 26, cx + 12, cy + 27.5, 2, 1.9, SOMBRA);
+  } else if (p.paso < 0) {
+    tira(cx + 7, cy + 26, cx + 7, cy + 28, cx + 7, cy + 30, 1.9, 1.7, SOMBRA);
+    tira(cx - 3, cy + 25, cx - 4, cy + 26, cx - 6, cy + 27.5, 2, 1.9, SOMBRA);
+  } else { mancha(cx - 1, cy + 28.5, 2, SOMBRA); mancha(cx + 7, cy + 28.5, 2, SOMBRA); }
+
+  // cuerpo, barriga clara y brazos
+  elipse(cx + 3, cy + 18, 10.5, 9.5, PRINCIPAL);
+  caja(cx - 3, cy + 24, 13, 4, PRINCIPAL);
+  elipse(cx + 3, cy + 20, 6, 6, CLARO);
+  if (p.brazoI === null) sello(cx - 4, cy + 16, BRAZO, 5, ACENTO);
+  else tira(cx - 4, cy + 18, cx - 7, cy + 18, cx - 10, cy + 18 + p.brazoI, 2, 1.7, PRINCIPAL);
+  if (p.brazoD === null) sello(cx + 5, cy + 15, BRAZO, 5, ACENTO, true);
+  else tira(cx + 10, cy + 18, cx + 13, cy + 18, cx + 16, cy + 18 + p.brazoD, 2, 1.7, PRINCIPAL);
+
+  //cabeza: borde oscuro, sombra abajo a la derecha y un brillo arriba a la izquierda
+  elipse(cx, cy, 16.5, 14.5, TINTA);
+  elipse(cx, cy, 15.5, 13.5, SOMBRA);
+  elipse(cx - 1, cy - 1, 14.5, 12.5, PRINCIPAL);
+  elipse(cx - 8, cy - 8, 3, 1.6, CLARO);
+
+  if (est === AGUA_TURBIA)   // manchas de suciedad
+    [[9, 23, 2.8], [2, -9, 2.6], [10, 9, 2.3]].forEach(([mx, my, r]) => mancha(cx + mx, cy + my, r, BARRO));
+}
+
+function cuerpoNutria(est, p) {
+  const { cx, cy } = p;
+
+  // mano izquierda levantada (para saludar o del susto): va por detras de la cabeza
+  const mano = p.brazoD !== null ? p.brazoD : p.brazoI;
+  if (mano !== null) tira(cx - 7, cy + 17, cx - 12, cy + 17, cx - 15, cy + 16 + mano, 2.8, 2.5, VENA);
+
+  //cuerpo acurrucado y cola gruesa q sube por la derecha hasta una punta, barriga crema
+  elipse(cx + 3, cy + 20, 14.3, 13.3, SOMBRA);
+  tira(cx + 14, cy + 27, cx + 27, cy + 28, cx + 23.5, cy + 12.5 + p.colea * 0.8, 5.5, 1.8, SOMBRA, 1.2);
+  elipse(cx + 8, cy + 21, 7.6, 7.2, CLARO);
+
+  // orejitas: con el agua mal, se agachan
+  for (const lado of [-1, 1]) {
+    const ex = lado * 14.5, ey = -6 + p.caida * 4;
+    const ox = cx + ex * p.cg + ey * p.sg, oy = cy + ey * p.cg - ex * p.sg;
+    mancha(ox, oy, 2.9, PRINCIPAL);
+    mancha(ox, oy, 1.6, ACENTO);
+  }
+
+  //cabeza grande -> borde oscuro q la separa de las orejas y del cuerpo, sombra, brillo y hocico crema
+  elipse(cx, cy + 1, 16.5, 13.5, TINTA);
+  elipse(cx, cy, 15.5, 12.5, SOMBRA);
+  elipse(cx - 1, cy - 1, 14.5, 11.5, PRINCIPAL);
+  elipse(cx - 7, cy - 8, 3, 1.4, VENA);
+  elipse(cx + 1, cy + 4, 8.5, 5.5, CLARO);
+
+  // manos sobre el pecho (la izquierda, si no esta levantada) y patas recogidas sobre la barriga
+  if (mano === null) { elipse(cx - 2, cy + 18, 4.2, 3.7, TINTA); elipse(cx - 2, cy + 18, 3.2, 2.7, VENA); }
+  const tiembla = p.brazoI === null ? 0 : red(p.brazoI + 2);
+  mancha(cx + 10.5, cy + 16 + tiembla, 2.8, TINTA);
+  mancha(cx + 10.5, cy + 16 + tiembla, 1.8, VENA);
+  mancha(cx + 4, cy + 27, 2, VENA);
+  caja(cx + 2, cy + 27, 5, 3, VENA);
+  sello(cx + 1, cy + 25, PATITAS, 7, TINTA);
+
+  if (est === AGUA_TURBIA)
+    [[11, 23, 2], [5, -8, 2.4], [-7, 9, 2]].forEach(([mx, my, r]) => mancha(cx + mx, cy + my, r, BARRO));
+}
+
+// los bigotes de la nutria van encima del contorno, pa q salgan finos
+function bigotes(p) {
+  const { cx, cy } = p, cae = red(p.caida * 3);
+  recta(cx - 11, cy + 4, cx - 19, cy + 2 + cae, TINTA);
+  recta(cx - 11, cy + 6, cx - 19, cy + 8 + cae, TINTA);
+  recta(cx + 11, cy + 3, cx + 19, cy + 1 + cae, TINTA);
+  recta(cx + 11, cy + 5, cx + 19, cy + 6 + cae, TINTA);
+}
+
+function cuerpoPinguino(est, p) {
+  const { cx, cy, tf } = p, sin = Math.sin, cos = Math.cos;
+  const ladea = -p.inc;   //la cabeza se va hacia el lado que baja
+
+  //aletas - en "agua bien" la derecha esta siempre arriba, saludando, si no, cuelgan y aletean
+  let bi = p.brazoI, bd = p.brazoD;
+  if (est === AGUA_BIEN && bd === null) bd = -4.5 + sin(tf / 400);
+  let ix = -21, iy = 13 + bi, dx = 19, dy = 5 + bd;
+  if (bi === null) { const a = 1.05 + p.onda * sin(tf / 280) - p.caida * 0.6; ix = -11 - 10.5 * sin(a); iy = 13 + 8 * cos(a); }
+  if (bd === null) { const a = 0.9 + p.onda * sin(tf / 280 + 1) - p.caida * 0.5; dx = 13 + 9 * sin(a); dy = 11 + 9 * cos(a); }
+
+  // aletas anchas, cabeza y cuerpo: un borde mas oscuro y el relleno azul
+  [[0, SOMBRA], [1, PRINCIPAL]].forEach(([dr, c]) => {
+    tira(cx - 9, cy + 13, cx - 15, cy + 13, cx + ix, cy + iy, 5.2 - dr, 2 - dr, c);
+    tira(cx + 12, cy + 9, cx + 16, cy + 7, cx + dx, cy + dy, 4.6 - dr, 2.5 - dr, c);
+    elipse(cx - 1 + ladea, cy - 1, 14.5 - dr, 12.5 - dr, c);
+    elipse(cx + 2, cy + 12, 15 - dr, 19.5 - dr, c);
+  });
+  elipse(cx - 5 + ladea, cy - 10, 3, 1.2, VENA);
+
+  //frente blanca: los dos redondeles de la cara, con un pico de plumas oscuras entre ellos, la barbilla y la barriga
+  elipse(cx - 7 + ladea, cy, 4.8, 5.8, CLARO);
+  elipse(cx + 7 + ladea, cy, 4.8, 5.8, CLARO);
+  elipse(cx + 1, cy + 7, 9.5, 4, CLARO);
+  elipse(cx + 3, cy + 17, 11.4, 12.1, CLARO);
+
+  // patas naranjas: una apoyada y la otra levantada, al bailar se turnan
+  for (const lado of [-1, 1]) {
+    const alzada = p.paso === lado;
+    const px = cx + (lado > 0 ? (alzada ? 13 : 9) : (alzada ? -9 : -4)), py = cy + (alzada ? 30 : 32);
+    elipse(px, py, 3.6, 2.5, ACENTO);
+    punto(px - 1, py + 2, TINTA); punto(px + 1, py + 2, TINTA);  //los dedos
+  }
+
+  if (est === AGUA_TURBIA)
+    [[7, 23, 2.8], [-3, 15, 2.2], [9, 12, 1.8]].forEach(([mx, my, r]) => mancha(cx + mx, cy + my, r, BARRO));
+}
+
+const CUERPOS = [cuerpoAjolote, cuerpoNutria, cuerpoPinguino];
+
+// ojos, boca, mejillas y lagrima - los ojos son los mismos para las tres, la boca cambia
+function cara(cual, est, p, t) {
+  const { cy, tf, inc } = p, sin = Math.sin, cada = ms => Math.floor(t / ms);
+  const cx = p.cx - (cual === PINGUINO ? inc : 0);   //la cara del pinguino va con la cabeza ladeada
+  const [oi, od, oy, bx, by, mi, md, mey] = CARAS[cual];
+
+  // Con el agua bien, el ajolote y el pinguino sonrien con los ojos cerrados y de vez en cuando los abren;
+  // la nutria los tiene abiertos y los cierra al parpadear o al saludar
+  const parpadea = t % 4200 < 300, abiertos = cual === NUTRIA ? !parpadea && !p.saluda : parpadea;
+  for (const lado of [-1, 1]) {
+    const ox = cx + (lado > 0 ? od : oi), y = cy + oy - lado * inc;
+    if (est === AGUA_BIEN) {
+      if (abiertos) { disco(ox, y, 2, TINTA); punto(ox - 1, y - 1, BLANCO); }
+      else if (cual === PINGUINO) sello(ox - 2, y - 1, OJO_FELIZ_CHICO, 5, TINTA);
+      else sello(ox - 3, y - 1, OJO_FELIZ, 7, TINTA);
+    } else if (est === SIN_DATO) {
+      const mira = red(sin(tf / 600) * (cual === AJOLOTE ? 2 : 1));
+      if (t % 3200 < 120) caja(ox - 2, y, 5, 1, TINTA);
+      else { disco(ox + mira, y, 2, TINTA); punto(ox + mira - 1, y - 1, BLANCO); }
+    } else if (est === PH_BAJO) sello(ox - 2, y - 2, OJO_APRETADO, 5, TINTA, lado > 0);
+    else if (est === PH_ALTO) sello(ox - 3, y - 3, OJO_MAREADO, 7, TINTA, false, cada(130) % 4);
+    else {
+      sello(ox - 3, y, OJO_TRISTE, 7, TINTA);
+      recta(ox + lado * 3, y - 2, ox - lado * 2, y - 4, TINTA);  // cejas caidas
+    }
+  }
+
+  const mx = cx + bx;
+  let my = cy + by;
+  if (cual === PINGUINO) {
+    // pico naranja: sonrie (una raya lo parte), se abre del mareo o castanetea de frio
+    const abre = est === PH_ALTO ? 2 : est === AGUA_BIEN || (est === PH_BAJO && cada(90) % 2 === 0) ? 1 : 0;
+    sello(mx - 2, my, PICO, 5, ACENTO);
+    caja(mx - 1, my + 2, 3, abre, LENGUA);
+    caja(mx - 1, my + 2 + abre, 3, 1, ACENTO);
+    if (est === AGUA_TURBIA) { caja(mx - 2, my + 6, 5, 1, TINTA); punto(mx - 3, my + 7, TINTA); punto(mx + 3, my + 7, TINTA); }
+  } else if (cual === NUTRIA) {
+    sello(mx - 3, my - 4, NARIZ, 7, ACENTO);   // nariz ancha y, debajo,la rayita y la boca
+    punto(mx, my, TINTA);
+    my++;
+    if (est === AGUA_BIEN) {   // boca en "w"
+      punto(mx - 5, my, TINTA); punto(mx, my, TINTA); punto(mx + 5, my, TINTA);
+      caja(mx - 4, my + 1, 4, 1, TINTA); caja(mx + 1, my + 1, 4, 1, TINTA);
+      if (p.saluda) caja(mx - 1, my + 2, 3, 2, LENGUA);   // boca abierta
+    } else if (est === PH_BAJO) {
+      for (let i = -4; i <= 4; i++) punto(mx + i, my + 1 + red(sin(i * 1.5 + tf / 90) * 1.2), TINTA);
+    } else if (est === PH_ALTO) { disco(mx, my + 2, 2, TINTA); punto(mx, my + 2, LENGUA); }
+    else if (est === AGUA_TURBIA) { caja(mx - 2, my + 1, 5, 1, TINTA); punto(mx - 3, my + 2, TINTA); punto(mx + 3, my + 2, TINTA); }
+    else caja(mx - 1, my + 1, 3, 1, TINTA);
+  } else {
+    if (est === AGUA_BIEN) {
+      caja(mx - 3, my, 7, 1, TINTA);
+      punto(mx - 4, my - 1, TINTA); punto(mx + 4, my - 1, TINTA);
+      punto(mx + 4 * inc, my - 2, TINTA);    // la comisura del lado que sube
+      if (p.saluda) { caja(mx - 2, my + 1, 5, 1, LENGUA); caja(mx - 1, my + 2, 3, 1, LENGUA); }   // boca abierta
+    } else if (est === PH_BAJO) {
+      for (let i = -4; i <= 4; i++) punto(mx + i, my + red(sin(i * 1.5 + tf / 90) * 1.2), TINTA);
+    } else if (est === PH_ALTO) { disco(mx, my + 1, 2, TINTA); punto(mx, my + 1, LENGUA); }
+    else if (est === AGUA_TURBIA) { caja(mx - 2, my, 5, 1, TINTA); punto(mx - 3, my + 1, TINTA); punto(mx + 3, my + 1, TINTA); }
+    else caja(mx - 1, my, 3, 1, TINTA);
+  }
+
+  if (cual !== NUTRIA && (est === AGUA_BIEN || est === SIN_DATO || est === PH_ALTO)) {  // mejillas (la nutria lleva bigotes)
+    caja(cx + mi, cy + mey + inc, 4, 2, MEJILLA);
+    caja(cx + md, cy + mey - inc, 4, 2, MEJILLA);
+  }
+  if (est === AGUA_TURBIA) { const f = cada(110) % 16; if (f < 9) caja(cx + oi - 1, cy + oy + 4 + f, 1, 2, LAGRIMA); }
+}
+
+function burbuja(x, y, grande) {
+  if (grande) sello(x - 2, y - 2, BURBUJA, 5, BLANCO); else sello(x - 1, y - 1, BURBUJA_CHICA, 3, BLANCO);
+}
+function brillo(x, y, n) {
+  if (n === 0) punto(x, y, BRILLO);
+  else if (n === 1) sello(x - 1, y - 1, DESTELLO_CHICO, 3, BRILLO);
+  else sello(x - 3, y - 3, DESTELLO, 7, BRILLO);
+}
+
+// lo q rodea a la mascota: burbujas,destellos, gotas o un signo de pregunta
+function entorno(est, p, t) {
+  const { cx, cy } = p, sin = Math.sin, cada = ms => Math.floor(t / ms);
+  if (est === AGUA_TURBIA) for (let k = 0; k < 10; k++) {   //particulas que caen, no tapan a la mascota
+    const f = (cada(70) + k * 7) % 52, x = (k * 23) % 59, ancho = k % 3 === 0 ? 2 : 1;
+    for (let i = 0; i < ancho; i++) if (!lienzo[f * MW + x + i]) punto(x + i, f, BARRO);
+  }
+  if (est === AGUA_BIEN) {
+    for (let k = 0; k < 2; k++) {   // burbujas que suben por los costados
+      const f = (cada(70) + k * 13) % 26;
+      burbuja([3, 54][k] + red(sin((f + k * 4) / 4)), 50 - f, k);
+    }
+    let f = cada(160) % 12;    //destellos que titilan
+    if (f < 5) brillo(55, 5, [0, 1, 2, 1, 0][f]);
+    f = (cada(160) + 6) % 12;
+    if (f < 5) brillo(3, 2, [0, 1, 1, 1, 0][f]);
+  }
+  if (est === PH_BAJO) {
+    for (let k = 0; k < 3; k++) {   // gotas acidas que caen
+      const y = [26, 26, 34][k] + (cada(45) + k * 11) % 30;
+      if (y < 50) sello([2, 52, 56][k], y, GOTA, 3, ACIDO);
+    }
+    if (t % 500 < 250) {   // gotitas de susto
+      recta(cx + 12, cy - 15, cx + 13, cy - 16, LAGRIMA); recta(cx - 13, cy - 15, cx - 14, cy - 16, LAGRIMA);
+    }
+  }
+  if (est === PH_ALTO) for (let k = 0; k < 4; k++) {   // burbujas como de jabon
+    const f = (cada(55) + k * 8) % 30;
+    if (k !== 2 || f < 18) burbuja([3, 56, 52, 2][k] + red(sin((f + k) / 4)), 50 - f, k % 2 === 0);
+  }
+  if (est === SIN_DATO && t % 1000 < 650) sello(53, 1 + cada(1000) % 2, PREGUNTA, 5, BLANCO);
+}
+
+// una mascota completa en el lienzo
+function mascota(cual, est, t) {
+  const p = pose(est, CENTROS[cual][0], CENTROS[cual][1], t);
+  CUERPOS[cual](est, p);
+  cara(cual, est, p, t);
+  //contorno -> todo punto vacio pegado a la mascota se pinta oscuro - asi el borde sale nomas
+  const cuerpo = lienzo.slice();
+  const lleno = (x, y) => x >= 0 && x < MW && y >= 0 && y < MH && cuerpo[y * MW + x];
+  for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++)
+    if (!cuerpo[y * MW + x] && (lleno(x - 1, y) || lleno(x + 1, y) || lleno(x, y - 1) || lleno(x, y + 1))) lienzo[y * MW + x] = TINTA;
+  if (cual === NUTRIA) bigotes(p);
+  entorno(est, p, t);
+}
+
+const imagen = new ImageData(MW, MH);
+const puntos = new Uint32Array(imagen.data.buffer);
+const quieto = matchMedia("(prefers-reduced-motion: reduce)").matches;  // quien pidio menos movimiento ve las mascotas sin animar
+
+function animar() {
+  const t = Math.floor(performance.now());
+  for (const n of nodos) {
+    const est = n.alertas === null ? SIN_DATO : n.alertas.length ? n.alertas[Math.floor(t / 3500) % n.alertas.length] : AGUA_BIEN;
+    lienzo.fill(0);
+    mascota(n.i, est, quieto ? 500 : t);
+    const colores = PALETAS[n.i];
+    for (let i = 0; i < lienzo.length; i++) puntos[i] = colores[lienzo[i]];
+    n.papel.putImageData(imagen, 0, 0);
+    // sin medicion hay dos casos distintos: el equipo no contesta, o contesta pero no tiene sensores
+    const texto = est === SIN_DATO ? (n.motivo === "sensores" ? "Sin sensores" : "Sin señal") : ANIMOS[est];
+    if (est !== n.animoVisto || texto !== n.animoTexto) {
+      n.animoVisto = est;
+      n.animoTexto = texto;
+      n.pecera.dataset.estado = est;  // cambia el color del agua
+      n.animo.textContent = texto;
+    }
+  }
+}
+
+// ---------------- datos simulados (etapa 1) ----------------
+function lecturaSimulada(n) {
+  const paso = (v, d, min, max) => Math.min(max, Math.max(min, v + (Math.random() - 0.5) * d));
+  const s = n.simulado.quedan > 0 ? n.simulado.tipo : 0, sim = n.sim;
+  if (s) n.simulado.quedan--;
+  if (s === 4) throw new Error("sin respuesta");
+  const equipo = { wifi: true, internet: true, respaldo: true, reloj: true, gps: "si", lat: -10.6847 - n.i * 0.004, lng: -76.3105 + n.i * 0.003 };
+  if (s === 5) return { temp: null, ph: null, ntu: null, ce: null, ...equipo };
+  sim.temp = paso(sim.temp, 0.15, 8, 14);
+  sim.ph = paso(sim.ph, 0.05, 7.1, 8.1);
+  sim.ntu = paso(sim.ntu, 4, 8, 45);
+  sim.ce = paso(sim.ce, 6, 250, 480);
+  return { temp: sim.temp, ph: s === 1 ? paso(5.3, 0.3, 5, 5.6) : s === 2 ? paso(9.3, 0.3, 9, 9.6) : sim.ph,
+           ntu: s === 3 ? paso(180, 30, 140, 230) : sim.ntu, ce: sim.ce, ...equipo };
+}
+
+// ---------------- lectura de datos ----------------
+async function pedir(url, cabeceras = {}) {
+  const corte = new AbortController();
+  const espera = setTimeout(() => corte.abort(), 15000);
+  try {
+    const r = await fetch(url, { cache: "no-store", signal: corte.signal, headers: cabeceras });
+    if (!r.ok) throw new Error("sin respuesta");
+    return await r.json();
+  } finally { clearTimeout(espera); }
+}
+
+// ---------------- nube (etapa 3) ----------------
+// la pagina publica lee la base de datos de Supabase, donde cada equipo sube una lectura cada 20 s
+// la clave publica solo deja leer: escribir lo puede hacer cada equipo con su clave secreta
+function nube(ruta) {
+  if (!CONFIG.urlNube) return Promise.reject(new Error("sin conectar"));
+  const cabeceras = { apikey: CONFIG.clavePublica };
+  if (CONFIG.clavePublica.startsWith("eyJ")) cabeceras.Authorization = "Bearer " + CONFIG.clavePublica;
+  return pedir(CONFIG.urlNube + "/rest/v1/" + ruta, cabeceras);
+}
+// lo que tiene una consulta de muchas filas,de mil en mil (la base no entrega mas de mil por vez)
+async function nubeTodo(ruta) {
+  const filas = [];
+  for (let desde = 0; ; desde += 1000) {
+    const parte = await nube(ruta + "&limit=1000&offset=" + desde);
+    filas.push(...parte);
+    if (parte.length < 1000) return filas;
+  }
+}
+// la ultima lectura de los tres equipos llega en una sola consulta, q comparten los tres puntos
+let ultimasNube = null, ultimasCuando = 0;
+function ultimasDeLaNube() {
+  if (!ultimasNube || Date.now() - ultimasCuando > CONFIG.cadaMs / 2) {
+    ultimasCuando = Date.now();
+    ultimasNube = nube("ultima_lectura?select=*");
+  }
+  return ultimasNube;
+}
+const MINUTOS_SIN_DATOS = 3;  //si un equipo no sube nada en este tiempo, su pecera queda "Sin senal"
+
+async function leer(n) {
+  if (modo === "demo") return lecturaSimulada(n);
+  if (modo === "nube") {
+    const fila = (await ultimasDeLaNube()).find(f => f.equipo === n.i + 1);
+    if (!fila || Date.now() - new Date(fila.fecha) > MINUTOS_SIN_DATOS * 60000) throw new Error("sin datos recientes");
+    return { n: fila.id, fecha: fila.fecha, temp: fila.temp, ph: fila.ph, ntu: fila.ntu, ce: fila.ce, lat: fila.lat, lng: fila.lng,
+             gps: fila.gps, encendido: fila.encendido, wifi: true, internet: true, nube: true, reloj: true, respaldo: false, sd: false };
+  }
+  if (n.base === null) throw new Error("todavia no se sabe donde esta ese equipo");
+  return pedir(n.base + "/datos");
+}
+
+// un pH fuera de la escala no es una medicion: es un sensor sin conectar (los equipos con el programa
+// anterior mandan ese numero igual, los de ahora ya mandan "sin dato")
+function limpiar(d) {
+  if (!sinDato(d.ph) && (d.ph < 0 || d.ph > 14)) d.ph = null;
+  return d;
+}
+
+// el equipo guarda en memoria las ultimas lecturas: asi los graficos abren llenos
+async function cargarHistorial(n) {
+  try {
+    if (modo === "nube") {    // de la nube: lo subido en los ultimos min
+      const desde = new Date(Date.now() - CONFIG.maxPuntos * CONFIG.cadaMs).toISOString();
+      const filas = await nube("lecturas?select=id,fecha,temp,ph,ntu,ce&equipo=eq." + (n.i + 1) + "&fecha=gte." + desde + "&order=fecha.asc");
+      n.historial.length = 0;
+      filas.forEach(f => registrar(n, f, new Date(f.fecha)));
+      n.ultimaN = filas.length ? filas[filas.length - 1].id : null;
+      return;
+    }
+    const h = await pedir(n.base + "/historial");
+    const ahora = Date.now();
+    n.historial.length = 0;
+    h.lecturas.forEach(x => registrar(n, limpiar({ temp: x[1], ph: x[2], ntu: x[3] }), new Date(ahora - x[0] * 1000)));
+    n.ultimaN = h.n;
+  } catch (e) {}
+}
+
+//el equipo q entrega la pagina dice en q direccion estan los otros dos
+function ubicar(ips) {
+  nodos.forEach(n => {
+    if (n.i === propio || !ips[n.i]) return;
+    const b = "http://" + ips[n.i];
+    if (b !== n.base) { n.base = b; cargarHistorial(n); cargarResumen(n); }
+  });
+}
+
+// ---------------- dibujo ----------------
+const sinDato = v => v === null || v === undefined || Number.isNaN(v);
+const fmt = (v, dec) => sinDato(v) ? "—" : Number(v).toFixed(dec);
+function fueraDeRango(id, v) {
+  const l = LIMITES[id];
+  return !!l && v !== null && v !== undefined && (v < l[0] || v > l[1]);
+}
+// un equipo responde si manda datos, aunque sus sensores no midan
+const responde = n => n.alertas !== null || n.motivo === "sensores";
+
+function linea(valores, color) {
+  const v = valores.filter(x => x !== null && x !== undefined);
+  if (v.length < 2) return '<svg class="linea" viewBox="0 0 300 56" preserveAspectRatio="none"></svg>';
+  let min = Math.min(...v), max = Math.max(...v);
+  if (max - min < 1e-6) { max += 1; min -= 1; }
+  const m = (max - min) * 0.15; min -= m; max += m;
+  const pts = v.map((y, i) => [(i / (v.length - 1)) * 300, 52 - ((y - min) / (max - min)) * 48]);
+  const d = pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
+  return '<svg class="linea" viewBox="0 0 300 56" preserveAspectRatio="none" role="img" aria-label="Tendencia reciente">' +
+         '<path d="' + d + ' L300 56 L0 56 Z" fill="' + color + '" opacity="0.10"/>' +
+         '<path d="' + d + '" fill="none" stroke="' + color + '" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>';
+}
+
+// barra de color con la escala del parametro: el recuadro es el rango permitido y la aguja, el valor medido
+function medidor(p, v) {
+  const [min, max] = p.escala, l = LIMITES[p.id];
+  const pos = x => Math.min(100, Math.max(0, (x - min) / (max - min) * 100));
+  return '<div class="medidor" aria-hidden="true" style="background:linear-gradient(90deg,' + p.tinte + ')">' +
+         (l ? '<i style="left:' + pos(l[0]) + '%;width:' + (pos(l[1]) - pos(l[0])) + '%"></i>' : "") +
+         (sinDato(v) ? "" : '<b style="left:' + pos(v).toFixed(1) + '%"></b>') + "</div>";
+}
+
+//un parametro de los tres puntos a la vez: una linea por punto sobre la franja permitida
+// series: los datos de cada punto (con su momento en "t"), pie: lo que se escribe abajo a la izquierda y a la derecha
+function trazar(p, series, desde, hasta, pie) {
+  const l = LIMITES[p.id], ancho = Math.max(1, hasta - desde);
+  series = series.map(serie => serie.filter(h => h.t >= desde && h.t <= hasta && !sinDato(h[p.id])));
+  const valores = series.flat().map(h => h[p.id]);
+  let min = valores.length ? Math.min(...valores) : 0, max = valores.length ? Math.max(...valores) : 1;
+  if (l) { min = Math.min(min, l[0]); max = Math.max(max, l[1]); }    // el rango permitido siempre queda a la vista
+  if (max - min < 1e-6) { max += 1; min -= 1; }
+  const margen = (max - min) * 0.08, piso = min >= 0 ? 0 : -Infinity;    // lo que no puede ser negativo no baja de cero
+  min = Math.max(piso, min - margen); max += margen;
+  const X0 = 30, X1 = 318, Y0 = 6, Y1 = 90;
+  const x = t => (X0 + (t - desde) / ancho * (X1 - X0)).toFixed(1), y = v => (Y1 - (v - min) / (max - min) * (Y1 - Y0)).toFixed(1);
+  let s = '<svg class="comparado" viewBox="0 0 320 104" role="img" aria-label="' + p.nombre + ' de los tres puntos">';
+  if (l) s += '<rect x="' + X0 + '" y="' + y(l[1]) + '" width="' + (X1 - X0) + '" height="' + (y(l[0]) - y(l[1])).toFixed(1) + '" fill="#40c057" opacity=".16"/>';
+  s += '<path d="M' + X0 + " " + Y0 + "V" + Y1 + "H" + X1 + '" fill="none" stroke="#c9dfe5"/>' +
+       '<text x="' + (X0 - 4) + '" y="' + (Y0 + 7) + '" text-anchor="end">' + fmt(max, max < 20 ? 1 : 0) + "</text>" +
+       '<text x="' + (X0 - 4) + '" y="' + Y1 + '" text-anchor="end">' + fmt(min, max < 20 ? 1 : 0) + "</text>" +
+       '<text x="' + X0 + '" y="101">' + pie[0] + '</text><text x="' + X1 + '" y="101" text-anchor="end">' + pie[1] + "</text>";
+  series.forEach((serie, i) => {
+    if (serie.length === 1) s += '<circle cx="' + x(serie[0].t) + '" cy="' + y(serie[0][p.id]) + '" r="2" fill="' + TRAZOS[i] + '"/>';
+    if (serie.length > 1) s += '<path d="' + serie.map((h, k) => (k ? "L" : "M") + x(h.t) + " " + y(h[p.id])).join("") +
+                               '" fill="none" stroke="' + TRAZOS[i] + '" stroke-width="1.8" stroke-linejoin="round"/>';
+  });
+  return s + "</svg>";
+}
+const tituloGrafico = p => "<h4>" + p.nombre + (p.unidad ? " (" + p.unidad + ")" : "") + "</h4>";
+
+// lo de ahora: las lecturas que llegaron con la pagina abierta
+function grafico(p) {
+  // empieza en la lectura mas antigua q haya (como mucho, 5 min atras): asi no queda medio vacio
+  const ahora = Date.now(), tope = ahora - CONFIG.maxPuntos * CONFIG.cadaMs;
+  const desde = Math.max(tope, Math.min(ahora - 60000, ...nodos.map(n => n.historial.length ? n.historial[0].t : ahora)));
+  const hace = ahora - desde < 90000 ? Math.round((ahora - desde) / 1000) + " s" : Math.round((ahora - desde) / 60000) + " min";
+  const ultimos = nodos.map(n => '<span><i style="background:' + TRAZOS[n.i] + '"></i>' + fmt(responde(n) ? n.dato[p.id] : null, p.dec) + "</span>").join("");
+  return '<div class="graf">' + tituloGrafico(p) + '<div class="ultimos">' + ultimos + "</div>" +
+         trazar(p, nodos.map(n => n.historial), desde, ahora, ["hace " + hace, "ahora"]) + "</div>";
+}
+
+// ---------------- registro por dias, semanas y meses ----------------
+// cada equipo guarda una fila x hora con sus promedios (/resumen.csv), aqui se juntan las de los tres
+let rango = 168;   //horas que se muestran: 24, 168 (una semana), 720 (un mes) o 0 (todo)
+
+async function pedirTexto(url, espera = 20000) {
+  const corte = new AbortController();
+  const reloj = setTimeout(() => corte.abort(), espera);
+  try {
+    const r = await fetch(url, { cache: "no-store", signal: corte.signal });
+    if (!r.ok) throw new Error("sin respuesta");
+    return await r.text();
+  } finally { clearTimeout(reloj); }
+}
+
+// un mes inventado, hora por hora,pa la etapa de datos simulados (siempre sale igual)
+function resumenSimulado(n) {
+  const filas = [], ahora = Math.floor(Date.now() / 3600000) * 3600000;
+  let semilla = 7 + n.i * 131;
+  const azar = () => (semilla = (semilla * 16807) % 2147483647) / 2147483647;
+  for (let k = 30 * 24; k >= 0; k--) {
+    const t = ahora - k * 3600000, hora = new Date(t).getHours(), lluvia = azar() > 0.985 ? 120 + azar() * 200 : 0;
+    const ph = n.sim.ph + 0.25 * Math.sin(k / 37 + n.i) + (azar() - 0.5) * 0.15;
+    const ntu = n.sim.ntu + 8 * Math.sin(k / 53) + azar() * 6 + lluvia;
+    filas.push({ t, temp: n.sim.temp + 2.2 * Math.sin((hora - 9) / 24 * 6.283) + (azar() - 0.5) * 0.4, ph, phMin: ph - 0.08, phMax: ph + 0.08,
+                 ntu, ntuMax: ntu * 1.2, ce: n.sim.ce + 25 * Math.sin(k / 90 + n.i) + (azar() - 0.5) * 10 });
+  }
+  return filas;
+}
+
+async function cargarResumen(n) {
+  if (modo === "demo") n.resumen = resumenSimulado(n);
+  else if (modo === "nube") {    // la nube calcula los promedios de cada hora
+    try {
+      n.resumen = (await nubeTodo("rpc/resumen_por_hora?p_equipo=" + (n.i + 1))).map(f => ({
+        t: new Date(f.hora).getTime(), temp: f.temp, ph: f.ph, phMin: f.ph_min, phMax: f.ph_max, ntu: f.ntu, ntuMax: f.ntu_max, ce: f.ce }));
+    } catch (e) { n.resumen = n.resumen || []; }
+  } else if (n.base !== null) {
+    try {
+      const num = x => x === undefined || x === "" ? null : Number(x);
+      n.resumen = (await pedirTexto(n.base + "/resumen.csv")).split("\n").map(linea => linea.trim().split(","))
+        .filter(c => c.length >= 10 && c[0] !== "fecha")
+        .map(c => ({ t: new Date(c[0] + "T" + c[1] + ":00").getTime(), temp: num(c[3]), ph: num(c[4]), phMin: num(c[5]), phMax: num(c[6]),
+                     ntu: num(c[7]), ntuMax: num(c[8]), ce: num(c[9]) }))
+        .filter(f => !Number.isNaN(f.t));
+    } catch (e) { n.resumen = n.resumen || []; }  //un equipo con el programa anterior no tiene este registro
+  }
+  pintarRegistro();
+}
+
+// junta las horas de un mismo dia en una sola fila con sus promedios
+function porDia(filas) {
+  const dias = new Map();
+  filas.forEach(f => {
+    const d = new Date(f.t), clave = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12).getTime();
+    if (!dias.has(clave)) dias.set(clave, []);
+    dias.get(clave).push(f);
+  });
+  return [...dias].map(([t, grupo]) => {
+    const fila = { t };
+    ["temp", "ph", "ntu", "ce"].forEach(id => { fila[id] = promedio(grupo.map(f => f[id])); });
+    return fila;
+  });
+}
+function promedio(valores) {
+  const v = valores.filter(x => !sinDato(x));
+  return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
+}
+
+function pintarRegistro() {
+  const ahora = Date.now(), todos = nodos.map(n => n.resumen || []);
+  const primero = Math.min(ahora, ...todos.map(r => r.length ? r[0].t : ahora));
+  const desde = rango ? ahora - rango * 3600000 : primero;
+  const enRango = todos.map(r => r.filter(f => f.t >= desde));
+  const series = rango && rango <= 168 ? enRango : enRango.map(porDia);
+  const dia = t => new Date(t).toLocaleDateString("es-PE", { day: "2-digit", month: "2-digit" });
+  document.querySelectorAll("#rango button").forEach(b => b.setAttribute("aria-pressed", Number(b.dataset.h) === rango));
+  document.getElementById("registroNota").textContent = enRango.some(r => r.length) ? ""
+    : "Todavía no hay registro en ese periodo: se guarda una fila por hora mientras el equipo está encendido y tiene la hora.";
+  document.getElementById("registroGraficos").innerHTML = PARAMETROS.map(p =>
+    '<div class="graf">' + tituloGrafico(p) + trazar(p, series, desde, ahora, [dia(desde), "hoy"]) + "</div>").join("");
+  const extremo = (valores, f) => { const v = valores.filter(x => !sinDato(x)); return v.length ? f(...v) : null; };
+  document.getElementById("resumenFilas").innerHTML = nodos.map(n => {
+    const r = enRango[n.i];
+    return '<tr><td><i style="display:inline-block;width:12px;height:4px;border-radius:2px;margin-right:6px;vertical-align:middle;background:' + TRAZOS[n.i] + '"></i>' + n.titulo +
+           "</td><td>" + r.length + "</td><td>" + fmt(promedio(r.map(f => f.ph)), 2) +
+           "</td><td>" + fmt(extremo(r.map(f => f.phMin ?? f.ph), Math.min), 2) + " a " + fmt(extremo(r.map(f => f.phMax ?? f.ph), Math.max), 2) +
+           "</td><td>" + fmt(promedio(r.map(f => f.ntu)), 0) + "</td><td>" + fmt(extremo(r.map(f => f.ntuMax ?? f.ntu), Math.max), 0) +
+           "</td><td>" + fmt(promedio(r.map(f => f.temp)), 1) + "</td><td>" + fmt(promedio(r.map(f => f.ce)), 0) + "</td></tr>";
+  }).join("");
+}
+
+// ---------------- cumple la norma? ----------------
+// los limites del ECA para agua (DS 004-2017-MINAM) que se pueden comparar con lo q mide el equipo
+const NORMA = [
+  { id: "ph", nombre: "pH", cat: "Categoría 3 · riego de vegetales (D1)", min: 6.5, max: 8.5 },
+  { id: "ph", nombre: "pH", cat: "Categoría 3 · bebida de animales (D2)", min: 6.5, max: 8.4 },
+  { id: "ph", nombre: "pH", cat: "Categoría 4 · conservación del ambiente acuático, ríos (E2)", min: 6.5, max: 9 },
+  { id: "ce", nombre: "Conductividad", cat: "Categoría 3 · riego de vegetales (D1)", max: 2500 },
+  { id: "ce", nombre: "Conductividad", cat: "Categoría 3 · bebida de animales (D2)", max: 5000 },
+  { id: "ce", nombre: "Conductividad", cat: "Categoría 4 · conservación del ambiente acuático, ríos (E2)", max: 1000 },
+  { id: "ntu", nombre: "Turbidez", cat: "Referencial: Categoría 1-A2 (las Categorías 3 y 4 no fijan turbidez)", max: 100 }
+];
+function pintarNorma() {
+  document.getElementById("normaFilas").innerHTML = NORMA.map(r =>
+    "<tr><td><b>" + r.nombre + ":</b> " + (r.min !== undefined ? "de " + r.min + " a " + r.max : "hasta " + r.max) + "<small>" + r.cat + "</small></td>" +
+    nodos.map(n => {
+      const v = responde(n) ? n.dato[r.id] : null;
+      if (sinDato(v)) return '<td><span class="chip gris">Sin dato</span></td>';
+      const cumple = (r.min === undefined || v >= r.min) && v <= r.max;
+      return '<td><span class="chip' + (cumple ? "" : " mal") + '">' + (cumple ? "Cumple" : "No cumple") + "</span><small>" + fmt(v, r.id === "ph" ? 2 : 0) + "</small></td>";
+    }).join("") + "</tr>").join("");
+}
+
+// ---------------- mapa ----------------
+// necesita internet (el fondo del mapa se trae de fuera) y que algun equipo tenga ubicacion de su GPS
+let mapa = null, mapaPedido = false, mapaVisto = "", mapaLugares = "", marcas = [];
+function pintarMapa() {
+  const con = nodos.filter(n => responde(n) && n.dato.lat && n.dato.lng);
+  const nota = document.getElementById("mapaNota");
+  if (!con.length) { nota.textContent = "Ningún equipo tiene ubicación todavía: el GPS tarda unos minutos y necesita estar al aire libre."; return; }
+  const color = n => n.alertas === null ? "#adb5bd" : n.alertas.length ? "#fa5252" : "#40c057";
+  const firma = con.map(n => [n.i, n.dato.lat.toFixed(5), n.dato.lng.toFixed(5), color(n)].join()).join(";") + (mapa ? "m" : "");
+  if (firma === mapaVisto) return;
+  mapaVisto = firma;
+  nota.innerHTML = con.map(n => n.titulo + ": " + n.dato.lat.toFixed(5) + ", " + n.dato.lng.toFixed(5) + ' · <a href="https://www.google.com/maps?q=' +
+                                n.dato.lat + "," + n.dato.lng + '" target="_blank" rel="noopener">abrir en Google Maps</a>').join("<br>");
+  if (!mapaPedido) {  // la primera vez se trae el mapa, si no hay internet, quedan los enlaces
+    mapaPedido = true;
+    const estilo = document.createElement("link");
+    estilo.rel = "stylesheet"; estilo.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+    const guion = document.createElement("script");
+    guion.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+    guion.onload = () => {
+      document.getElementById("mapaCaja").hidden = false;
+      mapa = L.map("mapa");
+      // dos fondos: la foto de satelite (se ve el rio) y el plano de calles
+      const satelite = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+                                   { maxZoom: 18, attribution: "Imágenes © Esri" }).addTo(mapa);
+      const calles = L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
+                                 { maxZoom: 19, subdomains: "abcd", attribution: "© OpenStreetMap, © CARTO" });
+      L.control.layers({ "Satélite": satelite, "Calles": calles }, null, { collapsed: false }).addTo(mapa);
+      pintarMapa();
+    };
+    document.head.append(estilo, guion);
+    return;
+  }
+  if (!mapa) return;
+  marcas.forEach(m => m.remove());
+  marcas = con.map(n => L.circleMarker([n.dato.lat, n.dato.lng], { radius: 11, color: "#083f52", weight: 2, fillColor: color(n), fillOpacity: 0.95 })
+    .addTo(mapa).bindTooltip(n.titulo, { permanent: true, direction: "top", offset: [0, -8] }));
+  // al aparecer un punto nuevo (o moverse uno) el mapa se acomoda para q entren todos
+  const lugares = con.map(n => n.dato.lat.toFixed(4) + "," + n.dato.lng.toFixed(4)).join(";");
+  if (lugares !== mapaLugares) {
+    mapaLugares = lugares;
+    mapa.fitBounds(L.latLngBounds(con.map(n => [n.dato.lat, n.dato.lng])).pad(0.5), { maxZoom: 17 });
+  }
+}
+
+// ---------------- exportar ----------------
+function descargar(nombre, texto) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([texto], { type: "text/csv" }));
+  a.download = nombre;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
+
+//lo guardado de los tres equipos en un solo archivo q Excel abre directo - lo que no fue una medicion
+// (sensor sin conectar) queda en blanco
+async function exportarJuntos(cuales) {
+  const nota = document.getElementById("exportarNota"), sinTilde = t => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const filas = ["sep=;", "punto;mascota;fecha;hora;temperatura_C;pH;turbidez_NTU;conductividad_uS;latitud;longitud;origen"];
+  const faltan = [], elegidos = Array.isArray(cuales) ? nodos.filter(n => cuales.includes(n.i)) : nodos;
+  for (const n of elegidos) {
+    const antes = filas.length, quien = [n.i + 1, sinTilde(n.mascota)];
+    nota.textContent = "Bajando lo guardado del " + n.titulo + "… puede tardar hasta un minuto.";
+    if (modo === "demo") {
+      n.historial.forEach(h => filas.push(quien.concat(new Date(h.t).toLocaleDateString("sv"), h.hora,
+        fmt(h.temp, 1), fmt(h.ph, 2), fmt(h.ntu, 0), fmt(h.ce, 0), "", "", "simulado").join(";").replace(/—/g, "")));
+    } else if (modo === "nube") {
+      try {
+        const vacio = v => (sinDato(v) ? "" : v);
+        (await nubeTodo("lecturas?select=fecha,temp,ph,ntu,ce,lat,lng&equipo=eq." + (n.i + 1) + "&order=fecha.asc")).forEach(f => {
+          const d = new Date(f.fecha);
+          filas.push(quien.concat(d.toLocaleDateString("sv"), d.toLocaleTimeString("es-PE", { hour12: false }),
+                                  vacio(f.temp), vacio(f.ph), vacio(f.ntu), vacio(f.ce), vacio(f.lat), vacio(f.lng), "nube").join(";"));
+        });
+      } catch (e) {}
+    } else if (n.base !== null) {
+      try {
+        let col = null;
+        (await pedirTexto(n.base + "/datos.csv", 180000)).split("\n").forEach(linea => {
+          const c = linea.trim().split(",");
+          if (c[0] === "fecha") { col = {}; c.forEach((titulo, i) => { col[titulo] = i; }); return; }
+          if (!col || c.length < 5) return;
+          const de = titulo => col[titulo] === undefined ? "" : c[col[titulo]] || "";
+          const ph = de("pH") !== "" && (de("pH") < 0 || de("pH") > 14) ? "" : de("pH");
+          const ntu = de("turbidez_V") !== "" && de("turbidez_V") <= 0.3 ? "" : de("turbidez_NTU");
+          filas.push(quien.concat(de("fecha"), de("hora"), de("temperatura_C") <= -100 ? "" : de("temperatura_C"), ph, ntu,
+                                  de("conductividad_uS"), de("latitud"), de("longitud"), de("origen")).join(";"));
+        });
+      } catch (e) {}
+    }
+    if (filas.length === antes) faltan.push(n.titulo);
+  }
+  const nombre = elegidos.length === 1 ? "punto" + (elegidos[0].i + 1) : "tres_puntos";
+  if (filas.length > 2) descargar("rio_san_juan_" + nombre + "_" + new Date().toLocaleDateString("sv") + ".csv", filas.join("\r\n") + "\r\n");
+  nota.textContent = (filas.length > 2 ? "Listo: " + (filas.length - 2) + " lecturas en un archivo." : "No se pudo bajar nada.") +
+                     (faltan.length ? " Sin datos de: " + faltan.join(", ") + "." : "");
+}
+
+// la frase de arriba: como estan los tres puntos - tambien va al titulo de la pestana
+function pintarResumen() {
+  const mal = nodos.filter(n => n.alertas !== null && n.alertas.length), bien = nodos.filter(n => n.alertas !== null && !n.alertas.length);
+  let texto = "Todavía no hay mediciones de ningún punto", clase = "";
+  if (mal.length) {
+    clase = "mal";
+    texto = "Atención en " + mal.length + " de 3 puntos: " +
+            mal.map(n => "Punto " + (n.i + 1) + " (" + n.alertas.map(a => ["", "pH bajo", "pH alto", "agua turbia"][a]).join(" y ") + ")").join(", ");
+  } else if (bien.length) {
+    clase = "ok";
+    texto = bien.length === 3 ? "Agua dentro de los límites en los 3 puntos"
+          : "Agua dentro de los límites en " + bien.length + (bien.length > 1 ? " puntos" : " punto") + "; sin medición en " + (3 - bien.length);
+  }
+  if (modo === "nube" && !CONFIG.urlNube) texto = "Esta página todavía no está conectada a la base de datos";
+  document.getElementById("resumen").className = "resumen " + clase;
+  document.getElementById("resumenTexto").textContent = texto;
+  document.title = (mal.length ? "⚠ " + mal.length + " en alerta · " : "") + "Río San Juan de Rancas";
+  document.getElementById("equipo").textContent = "3 puntos de monitoreo, " + nodos.filter(responde).length + " con señal";
+  document.getElementById("graficos").innerHTML = PARAMETROS.map(grafico).join("");
+  pintarTabla();
+  pintarNorma();
+  pintarMapa();
+  //los archivos de cada punto, por si se quieren x separado (solo con equipos reales)
+  const porPunto = document.getElementById("porPunto");
+  if (modo === "local") porPunto.innerHTML = nodos.filter(n => responde(n) && n.base !== null).map(n =>
+    '<a class="boton" href="' + n.base + '/datos.csv">Solo el punto ' + (n.i + 1) + "</a>").join(" ");
+  if (modo === "nube" && !porPunto.childElementCount) {   // desde la nube, cada punto por separado
+    porPunto.innerHTML = nodos.map(n => '<button data-n="' + n.i + '">Solo el punto ' + (n.i + 1) + "</button>").join(" ");
+    porPunto.querySelectorAll("button").forEach(b => { b.onclick = () => exportarJuntos([Number(b.dataset.n)]); });
+  }
+}
+
+// el cuadro con todo: una fila por dato y una columna x punto, las filas del equipo solo salen en la vista tecnica
+function pintarTabla() {
+  const celda = (n, contenido, clase) => '<td class="' + (clase || "") + (n.i === elegido ? " elegida" : "") + '">' + contenido + "</td>";
+  const fila = (nombre, nota, celdas, clase) => "<tr" + (clase ? ' class="' + clase + '"' : "") + "><th>" + nombre +
+                                                (nota ? "<small>" + nota + "</small>" : "") + "</th>" + nodos.map(celdas).join("") + "</tr>";
+  //un dato del equipo -> nomas tiene sentido si el equipo contesta
+  const delEquipo = (nombre, texto) => fila(nombre, "", n => celda(n, responde(n) ? texto(n.dato, n) : "—", responde(n) ? "" : "vacia"), "tecnica");
+  const NOTAS = { ph: "permitido: 6.5 a 8.5", ntu: "alerta sobre 100", ce: "ECA: 1000 y 2500" };
+
+  let h = fila("Estado del agua", "", n => {
+    const mide = n.alertas !== null, mal = mide && n.alertas.length > 0;
+    const texto = !mide ? (n.motivo === "sensores" ? "Sin sensores" : "Sin señal") : mal ? n.alertas.map(a => ANIMOS[a]).join(" y ") : "Agua bien";
+    return celda(n, '<span class="chip' + (mal ? " mal" : mide ? "" : " gris") + '">' + texto + "</span>");
+  });
+  PARAMETROS.forEach(p => {
+    h += fila(p.nombre + (p.unidad ? " (" + p.unidad + ")" : ""), NOTAS[p.id], n => {
+      const v = responde(n) ? n.dato[p.id] : null;
+      return celda(n, fmt(v, p.dec), sinDato(v) ? "vacia" : fueraDeRango(p.id, v) ? "fuera" : LIMITES[p.id] ? "dentro" : "");
+    });
+  });
+  h += fila("Última lectura", "", n => celda(n, n.historial.length ? n.historial[n.historial.length - 1].hora : "—", "vacia"), "tecnica") +
+       delEquipo("Internet", d => d.internet ? "Con internet" : d.wifi ? "WiFi sin internet" : "Sin WiFi") +
+       delEquipo("Datos guardados en", d => d.nube ? "En la nube" : d.respaldo && d.sd ? "ESP32 y microSD" : d.sd ? "microSD" : d.respaldo ? "Memoria del ESP32" : "No disponible") +
+       delEquipo("Fecha y hora", d => d.reloj ? "En hora" : "Sin hora") +
+       delEquipo("GPS", d => d.gps === "si" ? "Con ubicación" : d.gps === "buscando" ? "Buscando señal" : "No detectado");
+  if (modo !== "demo") {
+    h += delEquipo("Encendido hace", d => (d.encendido >= 3600 ? Math.floor(d.encendido / 3600) + " h " : "") + Math.floor(d.encendido % 3600 / 60) + " min") +
+         delEquipo("Lo guardado", (d, n) => d.respaldo && n.base !== null
+           ? '<a href="' + n.base + '/datos.csv">Descargar' + (d.kb ? " (" + d.kb + " KB)" : "") + "</a>" : "—");
+  }
+  document.getElementById("todoFilas").innerHTML = h;
+  document.querySelectorAll("#todoPuntos button").forEach(b => b.setAttribute("aria-pressed", Number(b.dataset.n) === elegido));
+}
+
+// la pecera de un punto: la luz de su rotulo y sus cuatro valores (la mascota y el agua las mueve animar)
+function pintarPecera(n) {
+  const d = responde(n) ? n.dato : {};
+  n.pecera.classList.toggle("ok", n.alertas !== null && !n.problemas.length);
+  n.pecera.classList.toggle("mal", n.alertas !== null && n.problemas.length > 0);
+  n.mini.innerHTML = PARAMETROS.map(p => "<span" + (fueraDeRango(p.id, d[p.id]) ? ' class="fuera"' : "") + "><b>" + fmt(d[p.id], p.dec) + "</b> " +
+                                         (p.unidad || p.nombre) + "</span>").join("");
+}
+
+// el detalle del punto elegido: aviso con su explicacion, tarjetas, tabla y estado del equipo
+function pintarDetalle() {
+  const n = nodos[elegido], d = n.dato || {}, mide = n.alertas !== null;
+  const caso = mide ? (n.problemas.length ? "mal" : "bien") : n.motivo;
+  const ultima = n.historial.length ? n.historial[n.historial.length - 1].hora : "";
+
+  const sem = document.getElementById("semaforo");
+  sem.classList.toggle("gris", !mide);
+  sem.classList.toggle("mal", caso === "mal");
+  document.getElementById("semTitulo").textContent = n.titulo + ": " +
+    { bien: "agua dentro de los límites", mal: "parámetro fuera de rango", sensores: "equipo encendido, sin sensores",
+      senal: n.dato ? "sin respuesta del equipo" : "sin señal" }[caso];
+  document.getElementById("semDetalle").textContent =
+    { bien: "Todos los parámetros medidos están en rango.", mal: "Fuera de rango: " + n.problemas.join(" y ") + ".",
+      sensores: "Llegan datos del equipo, pero ni el pH ni la turbidez traen una lectura válida.",
+      senal: ultima ? "Último dato recibido a las " + ultima + ". Los valores de abajo pueden estar desactualizados." : "Todavía no llegó ningún dato de este punto." }[caso];
+  document.getElementById("explica").textContent =
+    caso === "mal" ? n.alertas.map(a => EXPLICA[a]).join(" ") : caso === "bien" ? EXPLICA[0] : SIN_MEDICION[caso];
+
+  document.getElementById("tituloDetalle").textContent = "Detalle del " + n.titulo;
+  document.getElementById("tarjetas").innerHTML = PARAMETROS.map(p => {
+    const v = d[p.id];
+    const mal = fueraDeRango(p.id, v);
+    const chip = sinDato(v) ? '<span class="chip gris">' + (responde(n) ? "Sin sensor" : "Pendiente") + "</span>"
+               : LIMITES[p.id] ? '<span class="chip' + (mal ? ' mal' : '') + '">' + (mal ? "Fuera de rango" : "Normal") + '</span>' : "";
+    return '<article class="tarjeta" style="--c:' + p.color + '"><div class="nombre"><span>' + p.nombre + '</span>' + chip + '</div>' +
+           '<div class="valor">' + fmt(v, p.dec) + '<small>' + p.unidad + '</small></div>' + medidor(p, v) +
+           '<div class="limite">' + p.limite + '</div>' + linea(n.historial.map(h => h[p.id]), p.color) + '</article>';
+  }).join("");
+
+  document.getElementById("tituloTabla").textContent = "Últimas lecturas · " + n.titulo;
+  document.getElementById("filas").innerHTML = n.historial.slice(-8).reverse().map(h => {
+    const mal = fueraDeRango("ph", h.ph) || fueraDeRango("ntu", h.ntu), nada = sinDato(h.ph) && sinDato(h.ntu);
+    return "<tr><td>" + h.hora + "</td><td>" + fmt(h.temp, 1) + "</td><td>" + fmt(h.ph, 2) + "</td><td>" + fmt(h.ntu, 0) + "</td><td>" + fmt(h.ce, 0) +
+           '</td><td><span class="chip' + (mal ? " mal" : nada ? " gris" : "") + '">' + (mal ? "Alerta" : nada ? "Sin sensor" : "Normal") + "</span></td></tr>";
+  }).join("");
+
+  const si = (ok, txt) => '<span class="chip' + (ok ? "" : " gris") + '">' + txt + "</span>";
+  let estado = "<li><span>Señal del equipo</span>" + si(responde(n), responde(n) ? "Recibiendo datos" : "Sin señal") + "</li>";
+  if (n.dato) {
+    estado +=
+      "<li><span>Sensores de pH y turbidez</span>" + si(mide, mide ? "Midiendo" : "Sin lectura válida") + "</li>" +
+      "<li><span>Internet</span>" + si(d.internet, d.internet ? "Con internet" : d.wifi ? "WiFi sin internet" : "Sin WiFi") + "</li>" +
+      "<li><span>Datos guardados en</span>" + si(d.nube || d.respaldo || d.sd, d.nube ? "En la nube" : d.respaldo && d.sd ? "ESP32 y microSD" : d.sd ? "microSD"
+                                                 : d.respaldo ? "Memoria del ESP32" : "No disponible") + "</li>" +
+      "<li><span>Fecha y hora</span>" + si(d.reloj, d.reloj ? "En hora" : "Sin hora") + "</li>" +
+      "<li><span>GPS</span>" + si(d.gps === "si", d.gps === "si" ? "Con ubicación" : d.gps === "buscando" ? "Buscando señal" : "No detectado") + "</li>";
+    if (d.encendido !== undefined) {
+      const h = Math.floor(d.encendido / 3600), m = Math.floor(d.encendido % 3600 / 60);
+      estado += "<li><span>Encendido hace</span>" + si(false, (h ? h + " h " : "") + m + " min") + "</li>";
+    }
+  }
+  document.getElementById("estado").innerHTML = estado;
+  document.getElementById("ubicacion").innerHTML = (d.lat && d.lng)
+    ? d.lat.toFixed(5) + ", " + d.lng.toFixed(5) + ' · <a href="https://www.google.com/maps?q=' + d.lat + "," + d.lng + '" target="_blank" rel="noopener">ver en el mapa</a>'
+    : "sin dato de GPS";
+
+  // solo con un equipo real: direccion en el wifi y descarga de lo guardado
+  const dir = document.getElementById("direccion");
+  dir.hidden = !d.ip;
+  dir.textContent = d.ip ? "Dirección en el WiFi: http://" + d.ip : "";
+  const descarga = document.getElementById("descarga");
+  descarga.hidden = !(modo === "local" && d.respaldo && n.base !== null);
+  descarga.href = (n.base || "") + "/datos.csv";
+  descarga.textContent = "Descargar datos guardados (CSV" + (d.kb ? ", " + d.kb + " KB" : "") + ")";
+
+  document.getElementById("hora").textContent = ultima || "--:--:--";
+}
+
+// arriba a la derecha: la etapa, o el aviso de que el equipo que entrega la pagina no contesta
+function etiqueta() {
+  const f = document.getElementById("fuente"), bien = modo === "demo" || nodos[propio].fallos < 3;
+  f.textContent = bien ? ETIQUETAS[modo][0] : "Sin respuesta del equipo";
+  f.className = "fuente " + (bien ? ETIQUETAS[modo][1] : "");
+}
+
+function registrar(n, d, cuando) {
+  const t = cuando || new Date();
+  n.historial.push({ t: t.getTime(), hora: t.toLocaleTimeString("es-PE", { hour12: false }), temp: d.temp, ph: d.ph, ntu: d.ntu, ce: d.ce ?? null });
+  while (n.historial.length > CONFIG.maxPuntos) n.historial.shift();
+}
+
+// cada punto se consulta por su cuenta -> si uno no contesta, los otros dos siguen al dia
+async function ciclo(n) {
+  try {
+    const d = limpiar(await leer(n));
+    n.fallos = 0;
+    n.dato = d;
+    if (d.n === undefined || d.n !== n.ultimaN) { n.ultimaN = d.n; registrar(n, d, d.fecha ? new Date(d.fecha) : undefined); }
+    if (n.i === propio && d.ips) ubicar(d.ips);
+    // la luz, el aviso y la mascota salen de la misma regla
+    n.problemas = [];
+    const alertas = [];
+    if (fueraDeRango("ph", d.ph)) { n.problemas.push("pH " + fmt(d.ph, 2)); alertas.push(d.ph < LIMITES.ph[0] ? PH_BAJO : PH_ALTO); }
+    if (fueraDeRango("ntu", d.ntu)) { n.problemas.push("turbidez " + fmt(d.ntu, 0) + " NTU"); alertas.push(AGUA_TURBIA); }
+    const sinSensores = sinDato(d.ph) && sinDato(d.ntu);
+    n.alertas = sinSensores ? null : alertas;
+    n.motivo = sinSensores ? "sensores" : "";
+  } catch (e) {
+    if (++n.fallos >= 3 || modo === "demo") { n.alertas = null; n.motivo = "senal"; }   // con un equipo real, un corte corto no cambia la pantalla
+  }
+  pintarPecera(n);
+  if (n.i === elegido) pintarDetalle();
+  repintar();
+  setTimeout(() => ciclo(n), CONFIG.cadaMs);
+}
+
+// lo comun a los tres puntos se pinta una vez aunque lleguen los tres datos casi juntos
+let repintePendiente = false;
+function repintar() {
+  if (repintePendiente) return;
+  repintePendiente = true;
+  setTimeout(() => { repintePendiente = false; pintarResumen(); etiqueta(); }, 200);
+}
+
+function elegir(i) {
+  elegido = i;
+  nodos.forEach(n => n.pecera.setAttribute("aria-pressed", n.i === i));
+  pintarDetalle();
+  pintarTabla();
+}
+
+(async function iniciar() {
+  const parametros = new URLSearchParams(location.search);
+  const ip = parametros.get("equipo");
+  const base = ip ? "http://" + ip : CONFIG.equipo;
+  modo = ip ? "local" : CONFIG.fuente;
+
+  // vista sencilla o tecnica: se recuerda en este navegador - tambien se puede pedir con ?vista=sencilla
+  const boton = document.getElementById("vista");
+  let sencilla = parametros.get("vista") === "sencilla";
+  try { if (!parametros.has("vista")) sencilla = localStorage.getItem("vista") === "sencilla"; } catch (e) {}
+  const poner = () => { document.body.classList.toggle("sencilla", sencilla); boton.textContent = sencilla ? "Ver vista técnica" : "Ver vista sencilla"; };
+  boton.onclick = () => {
+    sencilla = !sencilla; poner();
+    try { localStorage.setItem("vista", sencilla ? "sencilla" : "tecnica"); } catch (e) {}
+    if (mapa) mapa.invalidateSize();
+  };
+  const queEs = document.getElementById("queEs");
+  document.getElementById("acerca").onclick = () => queEs.showModal();
+  document.getElementById("cerrarQueEs").onclick = () => queEs.close();
+  document.getElementById("juntos").onclick = () => exportarJuntos();
+  document.getElementById("imprimir").onclick = () => {
+    document.getElementById("fechaInforme").textContent = "Informe del " + new Date().toLocaleString("es-PE", { dateStyle: "long", timeStyle: "short" });
+    print();
+  };
+  document.querySelectorAll("#rango button").forEach(b => { b.onclick = () => { rango = Number(b.dataset.h); pintarRegistro(); }; });
+  poner();
+
+  // las tres peceras
+  const caja3 = document.getElementById("peceras");
+  nodos.forEach(n => {
+    const b = document.createElement("button");
+    b.className = "pecera";
+    b.dataset.estado = 4;
+    b.dataset.n = n.i;
+    b.innerHTML = '<span class="agua"><span class="rotulo"><i></i><span><em>Punto </em>' + (n.i + 1) + " · " + n.mascota + "</span></span>" +
+                  '<canvas width="' + MW + '" height="' + MH + '" role="img" aria-label="' + n.mascota + ', la mascota del punto ' + (n.i + 1) + '"></canvas></span>' +
+                  '<span class="animo">Sin señal</span><span class="mini"></span>';
+    b.onclick = () => elegir(n.i);
+    caja3.appendChild(b);
+    n.pecera = b;
+    n.papel = b.querySelector("canvas").getContext("2d");
+    n.animo = b.querySelector(".animo");
+    n.mini = b.querySelector(".mini");
+    pintarPecera(n);
+  });
+  nodos.forEach(n => {
+    const th = document.createElement("th");
+    th.innerHTML = '<button data-n="' + n.i + '"><em>Punto </em>' + (n.i + 1) + " · " + n.mascota + "</button>";
+    th.firstChild.onclick = () => elegir(n.i);
+    document.getElementById("todoPuntos").appendChild(th);
+    document.getElementById("normaPuntos").insertAdjacentHTML("beforeend", "<th>Punto " + (n.i + 1) + "<br>" + n.mascota + "</th>");
+  });
+  document.getElementById("leyenda").innerHTML = nodos.map(n => '<span><i style="background:' + TRAZOS[n.i] + '"></i>' + n.titulo + "</span>").join("");
+  animar();
+  setInterval(animar, quieto ? 1000 : 60);
+
+  if (modo === "demo") {
+    document.getElementById("simular").hidden = false;
+    document.querySelectorAll("#simular button").forEach(b => { b.onclick = () => { nodos[elegido].simulado = { tipo: Number(b.dataset.s), quedan: 6 }; }; });
+    const ahora = Date.now();
+    nodos.forEach(n => { for (let i = 60; i > 0; i--) registrar(n, lecturaSimulada(n), new Date(ahora - i * CONFIG.cadaMs)); });
+    // index.html?alerta=3 deja el punto 1 con el agua turbia (1 pH bajo, 2 pH alto, 4 sin senal, 5 sin sensores),
+    // con tres numeros se fija cada punto: ?alerta=0,1,3
+    if (parametros.has("alerta")) {
+      (parametros.get("alerta") || "3").split(",").forEach((a, i) => { if (nodos[i] && Number(a)) nodos[i].simulado = { tipo: Number(a), quedan: 1e9 }; });
+    }
+  } else if (modo === "nube") {
+    // los equipos suben cada 20 s: basta con mirar cada 10 s (y asi la nube gasta menos)
+    CONFIG.cadaMs = 10000;
+    SIN_MEDICION.senal = "Este equipo no ha subido datos en los últimos " + MINUTOS_SIN_DATOS + " minutos: puede estar apagado o sin internet.";
+    if (!CONFIG.urlNube) document.getElementById("resumenTexto").textContent = "Esta página todavía no está conectada a la base de datos";
+    await Promise.all(nodos.map(cargarHistorial));
+  } else if (modo === "local") {
+    // primero se pregunta al equipo que entrega la pagina cual de los tres es
+    try { propio = ((await pedir(base + "/datos")).nodo || 1) - 1; } catch (e) {}
+    nodos[propio].base = base;
+    await cargarHistorial(nodos[propio]);
+  }
+  nodos.forEach(cargarResumen);
+  setInterval(() => nodos.forEach(cargarResumen), 600000);
+  elegir(propio);
+  nodos.forEach(ciclo);
+})();
+</script>
+</body>
+</html>

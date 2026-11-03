@@ -1,0 +1,651 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monitoreo del Río San Juan de Rancas</title>
+<style>
+  /* Los dos colores del agua de la pecera: declarados asi, el cambio de un estado a otro se ve gradual */
+  @property --a { syntax: "<color>"; inherits: true; initial-value: #cfdbe0; }
+  @property --b { syntax: "<color>"; inherits: true; initial-value: #94a8b2; }
+  :root {
+    --fondo: #e8f4f6; --tarjeta: #ffffff; --borde: #c9dfe5; --texto: #11303c; --suave: #527079;
+    --rio: #083f52; --agua: #0b7285; --agua-claro: #def2f5;
+    --ok: #2b8a3e; --ok-claro: #e3f5e6; --mal: #c92a2a; --mal-claro: #fdecec;
+    --arena: #f1dfa9; --arena-borde: #d8c07a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--fondo); color: var(--texto);
+         font-family: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif; line-height: 1.4; }
+  .contenedor { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
+
+  /* Cabecera: la franja del rio. La pecera se monta sobre su borde de abajo */
+  .rio { background: linear-gradient(135deg, #083f52, #0b7285); color: #fff; padding: 18px 0 66px; }
+  .rio .contenedor { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+  h1 { font-size: 1.6rem; font-weight: 800; margin: 0; text-wrap: balance; }
+  .sub { color: #cdeaf0; font-size: .92rem; margin-top: 3px; }
+  .lado { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: .85rem; }
+  .fuente { font-size: .82rem; font-weight: 700; padding: 6px 12px; border-radius: 999px; background: #ffe8a3; color: #5e3b00; white-space: nowrap; }
+  .fuente.local { background: #c6f0f5; color: #06404d; }
+  .fuente.nube { background: #d0f4d6; color: #1b5e2a; }
+  main.contenedor { margin-top: -50px; }
+
+  /* Pecera: el ajolote y el aviso del estado del agua */
+  .pecera { --a: #cfdbe0; --b: #94a8b2; position: relative; display: grid; grid-template-columns: auto 1fr; gap: 12px 26px; align-items: center;
+            padding: 12px 20px 33px; margin-bottom: 16px; border: 3px solid var(--rio); border-radius: 18px; overflow: hidden;
+            background: linear-gradient(#ffffff59 0 5px, #fff0 5px), linear-gradient(var(--a), var(--b));
+            transition: --a .8s, --b .8s; }
+  .pecera[data-estado="0"] { --a: #96e6ec; --b: #2aa9c0; }
+  .pecera[data-estado="1"] { --a: #fbeb93; --b: #efb23f; }
+  .pecera[data-estado="2"] { --a: #cdd0fc; --b: #7d72e0; }
+  .pecera[data-estado="3"] { --a: #dccba6; --b: #a88758; }
+  .pecera::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 30px;
+                   background: var(--arena); border-top: 3px solid var(--arena-borde); }
+  #mascota { display: block; position: relative; z-index: 1; width: 248px; height: 224px; margin-bottom: -8px;
+             align-self: end; image-rendering: pixelated; }
+  .animo { position: absolute; z-index: 2; left: 0; bottom: 0; width: 288px; margin: 0; line-height: 30px;
+           text-align: center; font-size: .9rem; font-weight: 800; color: #5a4310; }
+  .semaforo { position: relative; z-index: 1; display: flex; align-items: center; gap: 14px; padding: 16px 18px;
+              border-radius: 14px; background: #fff; }
+  .semaforo::before { content: ""; position: absolute; left: -10px; top: 50%; margin-top: -10px;
+                      border: 10px solid transparent; border-left: 0; border-right-color: #fff; }
+  .luces { display: flex; gap: 8px; padding: 8px 10px; background: #22313a; border-radius: 999px; }
+  .luz { width: 22px; height: 22px; border-radius: 50%; background: #45555f; }
+  .semaforo:not(.mal):not(.gris) .luz.verde { background: #40c057; box-shadow: 0 0 0 4px rgba(64,192,87,.25); }
+  .semaforo.mal .luz.roja { background: #fa5252; box-shadow: 0 0 0 4px rgba(250,82,82,.25); }
+  .semaforo h2 { margin: 0; font-size: 1.3rem; font-weight: 800; color: var(--ok); text-wrap: balance; }
+  .semaforo.mal h2 { color: var(--mal); }
+  .semaforo.gris h2 { color: var(--suave); }
+  .semaforo p { margin: 2px 0 0; color: var(--suave); font-size: .92rem; }
+
+  /* Tarjetas de cada parametro */
+  .rejilla { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; margin-bottom: 14px; }
+  .tarjeta { background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 14px; padding: 14px 16px;
+             box-shadow: 0 3px 0 var(--borde); }
+  .rejilla .tarjeta { border-top: 5px solid var(--c); }
+  .nombre { font-size: .95rem; font-weight: 700; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .valor { font-size: 2.4rem; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.2; margin-top: 2px; }
+  .valor small { font-size: 1rem; font-weight: 600; color: var(--suave); margin-left: 4px; }
+  .medidor { position: relative; height: 10px; border-radius: 5px; margin: 10px 0 8px; }
+  .medidor i { position: absolute; top: -4px; bottom: -4px; border: 2px solid var(--texto); border-radius: 7px; }
+  .medidor b { position: absolute; top: -6px; bottom: -6px; width: 6px; margin-left: -3px; border-radius: 3px;
+               background: var(--texto); border: 1px solid #fff; }
+  .limite { font-size: .8rem; color: var(--suave); min-height: 1.2em; }
+  .chip { font-size: .72rem; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: var(--ok-claro); color: var(--ok); }
+  .chip.mal { background: var(--mal-claro); color: var(--mal); }
+  .chip.gris { background: #e6edf0; color: var(--suave); }
+  svg.linea { width: 100%; height: 56px; display: block; margin-top: 8px; }
+
+  .dos { display: grid; grid-template-columns: 2fr 1fr; gap: 14px; }
+  .dos > *, .rejilla > * { min-width: 0; }
+  h3 { margin: 0 0 10px; font-size: 1.05rem; color: var(--agua); }
+  .tabla-caja { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: .88rem; font-variant-numeric: tabular-nums; }
+  th, td { text-align: right; padding: 7px 8px; border-bottom: 1px solid var(--borde); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  th { background: var(--agua-claro); color: var(--texto); font-weight: 700; font-size: .8rem; border-bottom: 0; }
+  th:first-child { border-radius: 8px 0 0 8px; }
+  th:last-child { border-radius: 0 8px 8px 0; }
+  .estado-lista { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; font-size: .9rem; }
+  .estado-lista li { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  a { color: var(--agua); }
+  button, .boton { font: inherit; font-size: .85rem; font-weight: 600; padding: 7px 12px; border-radius: 8px; border: 1px solid var(--borde);
+           background: var(--tarjeta); color: var(--texto); cursor: pointer; }
+  button:hover, .boton:hover { border-color: var(--agua); }
+  button:focus-visible, a:focus-visible { outline: 3px solid #ffd43b; outline-offset: 2px; }
+  .lado button { border-radius: 999px; border: 0; padding: 6px 12px; }
+  .boton { display: inline-block; text-decoration: none; margin-top: 12px; }
+  [hidden] { display: none !important; }
+  footer { color: var(--suave); font-size: .8rem; margin: 18px 0 8px; text-align: center; }
+
+  @media (max-width: 780px) {
+    .dos { grid-template-columns: 1fr; }
+    h1 { font-size: 1.25rem; }
+    .valor { font-size: 2rem; }
+    /* En el celular el aviso va arriba y el ajolote debajo, parado en la arena */
+    .pecera { grid-template-columns: 1fr; padding: 14px 14px 33px; }
+    #mascota { order: 2; margin: 0 auto -8px; }
+    .animo { width: 100%; }
+    .semaforo::before { left: 50%; top: auto; bottom: -10px; margin: 0 0 0 -10px;
+                        border: 10px solid transparent; border-bottom: 0; border-top-color: #fff; }
+  }
+</style>
+</head>
+<body>
+<header class="rio">
+  <div class="contenedor">
+    <div>
+      <h1>Monitoreo del Río San Juan de Rancas</h1>
+      <div class="sub">Sistema IoT de parámetros fisicoquímicos del agua · <span id="equipo">Equipo 1</span> · Actualizado <span id="hora">--:--:--</span></div>
+    </div>
+    <div class="lado">
+      <span id="simular" class="lado" hidden>Simular
+        <button data-s="1">pH bajo</button><button data-s="2">pH alto</button><button data-s="3">Agua turbia</button><button data-s="4">Sin señal</button>
+      </span>
+      <span class="fuente" id="fuente">Datos simulados</span>
+    </div>
+  </div>
+</header>
+
+<main class="contenedor">
+  <section class="pecera" id="pecera" data-estado="4">
+    <canvas id="mascota" width="62" height="56" role="img" aria-label="Ajolote, la mascota del equipo"></canvas>
+    <p class="animo" id="animo">Sin dato</p>
+    <div class="semaforo gris" id="semaforo" aria-live="polite">
+      <div class="luces" aria-hidden="true"><span class="luz roja"></span><span class="luz verde"></span></div>
+      <div>
+        <h2 id="semTitulo">Conectando con el equipo</h2>
+        <p id="semDetalle">Todavía no llegó ningún dato.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="rejilla" id="tarjetas"></section>
+
+  <section class="dos">
+    <div class="tarjeta">
+      <h3>Últimas lecturas</h3>
+      <div class="tabla-caja">
+        <table>
+          <thead><tr><th>Hora</th><th>Temp. (°C)</th><th>pH</th><th>Turbidez (NTU)</th><th>Cond. (µS/cm)</th><th>Estado</th></tr></thead>
+          <tbody id="filas"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="tarjeta">
+      <h3>Estado del equipo</h3>
+      <ul class="estado-lista" id="estado"></ul>
+      <p class="limite" style="margin-top:12px">Ubicación: <span id="ubicacion">sin dato de GPS</span></p>
+      <p class="limite" id="direccion" hidden></p>
+      <a class="boton" id="descarga" href="/datos.csv" hidden>Descargar datos guardados (CSV)</a>
+    </div>
+  </section>
+
+  <footer>
+    Proyecto de Innovación Formativa 2026 · Universidad Nacional Daniel Alcides Carrión<br>
+    Referencias del ECA para agua (D.S. 004-2017-MINAM): pH 6.5 a 8.5 (Categoría 3) ·
+    turbidez 100 NTU, referencial (Categoría 1-A2; las Categorías 3 y 4 no fijan turbidez) ·
+    conductividad 1000 µS/cm (Categoría 4) y 2500 µS/cm (Categoría 3)
+  </footer>
+</main>
+
+<script>
+// ---------------- Configuracion ----------------
+// fuente puede ser "demo" (datos simulados), "local" (el ESP32 en la misma red) o "nube" (base de datos en internet).
+// La copia que va dentro del equipo sale con "local" (la cambia actualizar_pagina.py).
+// Para ver un equipo real desde la PC sin tocar nada: index.html?equipo=192.168.4.1
+const CONFIG = {
+  fuente: "demo",
+  equipo: "",                // vacio = el mismo equipo que entrega la pagina
+  urlNube: "",               // se completa en la etapa 3
+  cadaMs: 2000,
+  maxPuntos: 60
+};
+const LIMITES = { ph: [6.5, 8.5], ntu: [0, 100] };
+// escala y tinte son la barra de color de cada tarjeta: de donde a donde va y que colores recorre
+const PARAMETROS = [
+  { id: "temp", nombre: "Temperatura", unidad: "°C", dec: 1, color: "#e8590c", escala: [0, 25], tinte: "#4dabf7,#ffe066,#ff6b35",
+    limite: "Sin límite fijado" },
+  { id: "ph",   nombre: "pH",          unidad: "",   dec: 2, color: "#0b7285", escala: [0, 14], tinte: "#e03131,#f59f00,#ffe066,#51cf66,#22b8cf,#4263eb,#7048e8",
+    limite: "Rango permitido: 6.5 a 8.5" },
+  { id: "ntu",  nombre: "Turbidez",    unidad: "NTU", dec: 0, color: "#7048e8", escala: [0, 300], tinte: "#bfeef5,#d9bf8f,#8a5a2b",
+    limite: "Alerta sobre 100 NTU (referencial) · el sensor mide hasta 3000" },
+  { id: "ce",   nombre: "Conductividad", unidad: "µS/cm", dec: 0, color: "#2b8a3e", escala: [0, 2500], tinte: "#d8f5a2,#40c057,#0b7285",
+    limite: "ECA: 1000 (Cat. 4) y 2500 (Cat. 3) · sin calibrar, mide de 120 a 2200" }
+];
+
+const ETIQUETAS = {
+  demo:  ["Etapa 1 · Datos simulados", ""],
+  local: ["Etapa 2 · Equipo en red local", "local"],
+  nube:  ["Etapa 3 · Datos desde la nube", "nube"]
+};
+
+const historial = [];
+let modo = "demo";
+let base = CONFIG.equipo;
+let ultimaN = null;          // numero de la ultima lectura recibida, para no repetirla
+let fallos = 0;
+
+// ---------------- Mascota ----------------
+// El ajolote de la pantalla del equipo, a color. Es el mismo dibujo de equipo_iot_etapa2/pantalla.h
+// (y de simulador_pantalla.py), con las mismas formas y medidas; lo que cambia es que cada forma
+// se pinta con un color de la paleta en vez de encender o apagar puntos.
+// Si se cambia el dibujo alla, hay que pasarlo tambien aqui.
+const AGUA_BIEN = 0, PH_BAJO = 1, PH_ALTO = 2, AGUA_TURBIA = 3, SIN_DATO = 4;
+const ANIMOS = ["Agua bien", "pH bajo", "pH alto", "Agua turbia", "Sin dato"];
+const MW = 62, MH = 56;      // puntos del dibujo; la pagina lo muestra 4 veces mas grande
+const ROSA = 1, SOMBRA = 2, CLARO = 3, BRANQUIA = 4, VENA = 5, TINTA = 6, MEJILLA = 7, BLANCO = 8, BARRO = 9, LAGRIMA = 10, ACIDO = 11, BRILLO = 12;
+// Un color por numero, en el mismo orden de la linea de arriba (el 0 es transparente). Para repintar al ajolote se cambia aqui.
+const COLORES = [0].concat(["f9a3c0", "e5749d", "ffd6e3", "d6336c", "ff9dbd", "4a1836", "ff5c8a", "ffffff", "6b4a2b", "339af0", "d9480f", "fff3a3"]
+  .map(h => { const n = parseInt(h, 16); return (0xff000000 | (n & 255) << 16 | (n & 0xff00) | n >> 16) >>> 0; }));
+
+const lienzo = new Uint8Array(MW * MH);     // un numero de color por punto
+const red = v => Math.floor(v + 0.5);
+
+function punto(x, y, c) { x |= 0; y |= 0; if (x >= 0 && x < MW && y >= 0 && y < MH) lienzo[y * MW + x] = c; }
+function caja(x, y, w, h, c) { for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) punto(x + i, y + j, c); }
+function disco(cx, cy, r, c) {
+  for (let j = -r; j <= r; j++) for (let i = -r; i <= r; i++) if (i * i + j * j <= r * r + r * 0.6) punto(cx + i, cy + j, c);
+}
+function elipse(cx, cy, rx, ry, c) {
+  for (let j = -(ry | 0); j <= (ry | 0); j++) for (let i = -(rx | 0); i <= (rx | 0); i++)
+    if (i * i / (rx * rx) + j * j / (ry * ry) <= 1) punto(cx + i, cy + j, c);
+}
+function recta(x0, y0, x1, y1, c) {
+  const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+  for (let e = dx + dy; ; ) {
+    punto(x0, y0, c);
+    if (x0 === x1 && y0 === y1) break;
+    const e2 = 2 * e;
+    if (e2 >= dy) { e += dy; x0 += sx; }
+    if (e2 <= dx) { e += dx; y0 += sy; }
+  }
+}
+// Mancha redonda con centro y radio con decimales: asi las formas se mueven suave.
+function mancha(cx, cy, r, c) {
+  if (r < 0.4) return;
+  if (r < 1) { punto(red(cx), red(cy), c); return; }
+  for (let j = Math.floor(cy - r); j <= Math.ceil(cy + r); j++)
+    for (let i = Math.floor(cx - r); i <= Math.ceil(cx + r); i++)
+      if ((i - cx) * (i - cx) + (j - cy) * (j - cy) <= r * r) punto(i, j, c);
+}
+// Tira curva que va de (x0,y0) a (x2,y2) pasando cerca de (x1,y1), y cambia de grosor de r0 a r2.
+function tira(x0, y0, x1, y1, x2, y2, r0, r2, c, panza = 0) {
+  const n = Math.floor(Math.abs(x2 - x0) + Math.abs(y2 - y0) + Math.abs(x1 - x0) + Math.abs(y1 - y0)) + 2;
+  for (let k = 0; k <= n; k++) {
+    const s = k / n, a = (1 - s) * (1 - s), b = 2 * s * (1 - s), q = s * s;
+    mancha(a * x0 + b * x1 + q * x2, a * y0 + b * y1 + q * y2, r0 + (r2 - r0) * s + panza * Math.sin(Math.PI * s), c);
+  }
+}
+// Dibujito de pocos puntos: cada numero es una fila y el bit mas alto es el punto de la izquierda.
+function sello(x, y, filas, ancho, c, espejo, giro = 0) {
+  filas.forEach((fila, j) => {
+    for (let i = 0; i < ancho; i++) if (fila >> (ancho - 1 - i) & 1) {
+      let a = espejo ? ancho - 1 - i : i, b = j;
+      for (let g = 0; g < giro; g++) [a, b] = [ancho - 1 - b, a];      // cuartos de vuelta (dibujos cuadrados)
+      punto(x + a, y + b, c);
+    }
+  });
+}
+const OJO_FELIZ = [0b0111110, 0b1100011, 0b1000001];              // arco hacia arriba: ojo cerrado, sonriendo
+const OJO_TRISTE = [0b1000001, 0b1100011, 0b0111110];
+const OJO_APRETADO = [0b11000, 0b00110, 0b00001, 0b00110, 0b11000];
+const OJO_MAREADO = [0b0011100, 0b0100010, 0b1001101, 0b1010001, 0b1010010, 0b0001100, 0];   // espiral
+const BRAZO = [0b10000, 0b10000, 0b10001, 0b10001, 0b01110];      // bracito recogido (el izquierdo)
+const DESTELLO = [0b0001000, 0b0001000, 0b0011100, 0b1110111, 0b0011100, 0b0001000, 0b0001000];
+const DESTELLO_CHICO = [0b010, 0b111, 0b010];
+const GOTA = [0b010, 0b010, 0b111, 0b111, 0b010];
+const BURBUJA = [0b01110, 0b10001, 0b10001, 0b10001, 0b01110];
+const BURBUJA_CHICA = [0b010, 0b101, 0b010];
+const PREGUNTA = [0b01110, 0b10001, 0b00001, 0b00010, 0b00100, 0, 0b00100];
+// Branquias: base x,y, punta x,y y grosor, medidos desde el centro de la cabeza.
+const BRANQUIAS = [[-12, -7, -22, -13, 1.5], [-14, 0, -25, -1, 1.6], [-12, 7, -20, 10, 1.5],
+                   [11, -9, 15, -13, 1.4], [14, -3, 22, -6, 1.3], [14, 4, 20, 6, 1.3]];
+
+function burbuja(x, y, grande) {
+  if (grande) sello(x - 2, y - 2, BURBUJA, 5, BLANCO); else sello(x - 1, y - 1, BURBUJA_CHICA, 3, BLANCO);
+}
+function brillo(x, y, n) {
+  if (n === 0) punto(x, y, BRILLO);
+  else if (n === 1) sello(x - 1, y - 1, DESTELLO_CHICO, 3, BRILLO);
+  else sello(x - 3, y - 3, DESTELLO, 7, BRILLO);
+}
+
+function ajolote(est, cx, cy, t) {
+  const sin = Math.sin, cos = Math.cos, tf = t % 1048576, cada = ms => Math.floor(t / ms);
+
+  // ---- Movimiento de todo el cuerpo ----
+  let sube = 1.2 * sin(tf / 450), mueve = 0;                      // flota
+  let inc = 0;                                                    // cabeza ladeada: +1 sube el lado derecho
+  let caida = 0, onda = 0.22;                                     // branquias: cuanto caen y cuanto se mecen
+  let colea = sin(tf / 260) * 1.5, paso = 1, saluda = false;      // punta de la cola; que pata estira (0: ninguna)
+  if (est === AGUA_BIEN) {
+    const f = tf / 330;
+    sube = -Math.abs(sin(f)) * 2.2;                               // baila a brinquitos
+    inc = Math.floor(f / Math.PI) % 2 === 0 ? 1 : -1;             // y ladea la cabeza a cada brinco
+    paso = inc; colea = sin(tf / 150) * 2.5; saluda = t % 5200 < 1700;
+  } else if (est === PH_BAJO) {
+    mueve = red(sin(tf / 35)); sube = 0;                          // tiembla
+    caida = 0.55; onda = 0.05; colea = 3 + sin(tf / 40) * 0.6; paso = 0;
+  } else if (est === PH_ALTO) {
+    mueve = sin(tf / 420) * 2.4;                                  // se tambalea, mareado
+    inc = mueve > 1 ? -1 : mueve < -1 ? 1 : 0; onda = 0.32; paso = inc;
+  } else if (est === AGUA_TURBIA) {
+    sube = 1 + 0.5 * sin(tf / 700);                               // decaido
+    caida = 0.6; onda = 0.04; colea = 4; paso = 0;
+  } else inc = cada(2400) % 2 === 0 ? 1 : 0;                      // sin dato: ladea la cabeza, curioso
+  cx += red(mueve); cy += red(sube);
+  const cg = cos(inc * 0.1), sg = sin(inc * 0.1);
+
+  // ---- Cola: una hoja hacia la izquierda con su borde interior ----
+  [[0, ROSA], [2, SOMBRA], [3, CLARO]].forEach(([dr, c]) =>
+    tira(cx - 7, cy + 25, cx - 15, cy + 25.5 + colea * 0.4, cx - 22, cy + 22.5 + colea, 4.6 - dr, 1.8 - dr, c, 0.9));
+
+  // ---- Branquias: tres hojas por lado, con su vena clara ----
+  BRANQUIAS.forEach(([bx, by, tx, ty, r], k) => {
+    const a = (bx < 0 ? -1 : 1) * caida + onda * sin(tf / 280 + k * 1.3), dx = tx - bx, dy = ty - by;
+    tx = bx + dx * cos(a) - dy * sin(a); ty = by + dx * sin(a) + dy * cos(a);
+    [bx, by] = [bx * cg + by * sg, by * cg - bx * sg];            // la cabeza ladeada las lleva consigo
+    [tx, ty] = [tx * cg + ty * sg, ty * cg - tx * sg];
+    tira(cx + bx, cy + by, cx + (bx + tx) / 2, cy + (by + ty) / 2, cx + tx, cy + ty, r, r, BRANQUIA, r);
+    tira(cx + bx, cy + by, cx + (bx + tx) / 2, cy + (by + ty) / 2, cx + tx, cy + ty, 0.5, 0.5, VENA);
+  });
+
+  // ---- Patas: una estirada y la otra recogida; al bailar se turnan ----
+  if (paso > 0) {
+    tira(cx - 1, cy + 26, cx - 1, cy + 28, cx - 1, cy + 30, 1.9, 1.7, SOMBRA);
+    tira(cx + 9, cy + 25, cx + 10, cy + 26, cx + 12, cy + 27.5, 2, 1.9, SOMBRA);
+  } else if (paso < 0) {
+    tira(cx + 7, cy + 26, cx + 7, cy + 28, cx + 7, cy + 30, 1.9, 1.7, SOMBRA);
+    tira(cx - 3, cy + 25, cx - 4, cy + 26, cx - 6, cy + 27.5, 2, 1.9, SOMBRA);
+  } else { mancha(cx - 1, cy + 28.5, 2, SOMBRA); mancha(cx + 7, cy + 28.5, 2, SOMBRA); }
+
+  // ---- Cuerpo, barriga clara y brazos ----
+  elipse(cx + 3, cy + 18, 10.5, 9.5, ROSA);
+  caja(cx - 3, cy + 24, 13, 4, ROSA);
+  elipse(cx + 3, cy + 20, 6, 6, CLARO);
+  let brazoI = null, brazoD = null;                               // null: recogido delante de la barriga
+  if (saluda) brazoD = -5 + sin(tf / 110) * 2;
+  if (est === PH_BAJO) brazoI = brazoD = -2 + sin(tf / 40);
+  if (est === PH_ALTO) { brazoI = sin(tf / 200) * 4 - 1; brazoD = -brazoI - 2; }
+  if (brazoI === null) sello(cx - 4, cy + 16, BRAZO, 5, BRANQUIA);
+  else tira(cx - 4, cy + 18, cx - 7, cy + 18, cx - 10, cy + 18 + brazoI, 2, 1.7, ROSA);
+  if (brazoD === null) sello(cx + 5, cy + 15, BRAZO, 5, BRANQUIA, true);
+  else tira(cx + 10, cy + 18, cx + 13, cy + 18, cx + 16, cy + 18 + brazoD, 2, 1.7, ROSA);
+
+  // ---- Cabeza: borde oscuro, sombra abajo a la derecha y un brillo arriba a la izquierda ----
+  elipse(cx, cy, 16.5, 14.5, TINTA);
+  elipse(cx, cy, 15.5, 13.5, SOMBRA);
+  elipse(cx - 1, cy - 1, 14.5, 12.5, ROSA);
+  elipse(cx - 8, cy - 8, 3, 1.6, CLARO);
+
+  if (est === AGUA_TURBIA)                                        // manchas de suciedad
+    [[9, 23, 2.8], [2, -9, 2.6], [10, 9, 2.3]].forEach(([mx, my, r]) => mancha(cx + mx, cy + my, r, BARRO));
+
+  // ---- Ojos ----
+  for (const lado of [-1, 1]) {
+    const ox = cx + (lado > 0 ? 9 : -8), oy = cy - lado * inc;
+    if (est === AGUA_BIEN) {
+      if (t % 4200 < 300) { disco(ox, oy, 2, TINTA); punto(ox - 1, oy - 1, BLANCO); }   // de vez en cuando los abre
+      else sello(ox - 3, oy - 1, OJO_FELIZ, 7, TINTA);
+    } else if (est === SIN_DATO) {
+      const mira = red(sin(tf / 600) * 2);
+      if (t % 3200 < 120) caja(ox - 2, oy, 5, 1, TINTA);
+      else { disco(ox + mira, oy, 2, TINTA); punto(ox + mira - 1, oy - 1, BLANCO); }
+    } else if (est === PH_BAJO) sello(ox - 2, oy - 2, OJO_APRETADO, 5, TINTA, lado > 0);
+    else if (est === PH_ALTO) sello(ox - 3, oy - 3, OJO_MAREADO, 7, TINTA, false, cada(130) % 4);
+    else {
+      sello(ox - 3, oy, OJO_TRISTE, 7, TINTA);
+      recta(ox + lado * 3, oy - 2, ox - lado * 2, oy - 4, TINTA);                        // cejas caidas
+    }
+  }
+
+  // ---- Boca ----
+  const mx = cx + 1, my = cy + 6;
+  if (est === AGUA_BIEN) {
+    caja(mx - 3, my, 7, 1, TINTA);
+    punto(mx - 4, my - 1, TINTA); punto(mx + 4, my - 1, TINTA);
+    punto(mx + 4 * inc, my - 2, TINTA);                           // la comisura del lado que sube
+    if (saluda) { caja(mx - 2, my + 1, 5, 1, BRANQUIA); caja(mx - 1, my + 2, 3, 1, BRANQUIA); }   // boca abierta
+  } else if (est === PH_BAJO) {
+    for (let i = -4; i <= 4; i++) punto(mx + i, my + red(sin(i * 1.5 + tf / 90) * 1.2), TINTA);
+  } else if (est === PH_ALTO) { disco(mx, my + 1, 2, TINTA); punto(mx, my + 1, BRANQUIA); }
+  else if (est === AGUA_TURBIA) { caja(mx - 2, my, 5, 1, TINTA); punto(mx - 3, my + 1, TINTA); punto(mx + 3, my + 1, TINTA); }
+  else caja(mx - 1, my, 3, 1, TINTA);
+
+  // ---- Mejillas y lagrima ----
+  if (est === AGUA_BIEN || est === SIN_DATO || est === PH_ALTO) {
+    caja(cx - 12, cy + 5 + inc, 4, 2, MEJILLA);
+    caja(cx + 10, cy + 5 - inc, 4, 2, MEJILLA);
+  }
+  if (est === AGUA_TURBIA) { const f = cada(110) % 16; if (f < 9) caja(cx - 9, cy + 4 + f, 1, 2, LAGRIMA); }
+
+  // ---- Contorno: todo punto vacio pegado al ajolote se pinta oscuro. Asi el borde sale solo. ----
+  const cuerpo = lienzo.slice();
+  const lleno = (x, y) => x >= 0 && x < MW && y >= 0 && y < MH && cuerpo[y * MW + x];
+  for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++)
+    if (!cuerpo[y * MW + x] && (lleno(x - 1, y) || lleno(x + 1, y) || lleno(x, y - 1) || lleno(x, y + 1))) lienzo[y * MW + x] = TINTA;
+
+  // ---- Lo que lo rodea ----
+  if (est === AGUA_TURBIA) for (let k = 0; k < 10; k++) {         // particulas que caen; no tapan al ajolote
+    const f = (cada(70) + k * 7) % 52, x = (k * 23) % 59, ancho = k % 3 === 0 ? 2 : 1;
+    for (let i = 0; i < ancho; i++) if (!lienzo[f * MW + x + i]) punto(x + i, f, BARRO);
+  }
+  if (est === AGUA_BIEN) {
+    for (let k = 0; k < 2; k++) {                                 // burbujas que suben por los costados
+      const f = (cada(70) + k * 13) % 26;
+      burbuja([3, 54][k] + red(sin((f + k * 4) / 4)), 50 - f, k);
+    }
+    let f = cada(160) % 12;                                       // destellos que titilan
+    if (f < 5) brillo(55, 5, [0, 1, 2, 1, 0][f]);
+    f = (cada(160) + 6) % 12;
+    if (f < 5) brillo(3, 2, [0, 1, 1, 1, 0][f]);
+  }
+  if (est === PH_BAJO) {
+    for (let k = 0; k < 3; k++) {                                 // gotas acidas que caen
+      const y = [26, 26, 34][k] + (cada(45) + k * 11) % 30;
+      if (y < 50) sello([2, 52, 56][k], y, GOTA, 3, ACIDO);
+    }
+    if (t % 500 < 250) {                                          // gotitas de susto
+      recta(cx + 12, cy - 15, cx + 13, cy - 16, LAGRIMA); recta(cx - 13, cy - 15, cx - 14, cy - 16, LAGRIMA);
+    }
+  }
+  if (est === PH_ALTO) for (let k = 0; k < 4; k++) {              // burbujas como de jabon
+    const f = (cada(55) + k * 8) % 30;
+    if (k !== 2 || f < 18) burbuja([3, 56, 52, 2][k] + red(sin((f + k) / 4)), 50 - f, k % 2 === 0);
+  }
+  if (est === SIN_DATO && t % 1000 < 650) sello(53, 1 + cada(1000) % 2, PREGUNTA, 5, BLANCO);
+}
+
+// Que estado muestra: null = sin dato, [] = agua bien; con dos alertas a la vez se van turnando, como en el equipo.
+let alertasMascota = null;
+let animoVisto = -1;
+const papel = document.getElementById("mascota").getContext("2d");
+const imagen = papel.createImageData(MW, MH);
+const puntos = new Uint32Array(imagen.data.buffer);
+const quieto = matchMedia("(prefers-reduced-motion: reduce)").matches;   // quien pidio menos movimiento ve al ajolote sin animar
+
+function animar() {
+  const t = Math.floor(performance.now());
+  const est = alertasMascota === null ? SIN_DATO
+            : alertasMascota.length ? alertasMascota[Math.floor(t / 3500) % alertasMascota.length] : AGUA_BIEN;
+  lienzo.fill(0);
+  ajolote(est, 32, 20, quieto ? 500 : t);
+  for (let i = 0; i < lienzo.length; i++) puntos[i] = COLORES[lienzo[i]];
+  papel.putImageData(imagen, 0, 0);
+  if (est !== animoVisto) {
+    animoVisto = est;
+    document.getElementById("pecera").dataset.estado = est;      // cambia el color del agua
+    document.getElementById("animo").textContent = ANIMOS[est];
+  }
+}
+
+// ---------------- Datos simulados (etapa 1) ----------------
+let sim = { temp: 10.8, ph: 7.6, ntu: 22 };
+let simulado = { tipo: 0, quedan: 0 };   // 1 pH bajo, 2 pH alto, 3 agua turbia, 4 equipo sin respuesta; quedan = lecturas que dura
+function lecturaSimulada() {
+  const paso = (v, d, min, max) => Math.min(max, Math.max(min, v + (Math.random() - 0.5) * d));
+  const s = simulado.quedan > 0 ? simulado.tipo : 0;
+  if (s) simulado.quedan--;
+  if (s === 4) throw new Error("sin respuesta");
+  sim.temp = paso(sim.temp, 0.15, 8, 14);
+  sim.ph = paso(sim.ph, 0.05, 7.1, 8.1);
+  sim.ntu = paso(sim.ntu, 4, 8, 45);
+  return { temp: sim.temp, ph: s === 1 ? paso(5.3, 0.3, 5, 5.6) : s === 2 ? paso(9.3, 0.3, 9, 9.6) : sim.ph,
+           ntu: s === 3 ? paso(180, 30, 140, 230) : sim.ntu, ce: null,
+           wifi: true, internet: true, respaldo: true, reloj: true, gps: "si", lat: -10.6847, lng: -76.3105 };
+}
+
+// ---------------- Lectura de datos ----------------
+async function pedir(url) {
+  const corte = new AbortController();
+  const espera = setTimeout(() => corte.abort(), 6000);
+  try {
+    const r = await fetch(url, { cache: "no-store", signal: corte.signal });
+    if (!r.ok) throw new Error("sin respuesta");
+    return await r.json();
+  } finally { clearTimeout(espera); }
+}
+
+function leer() {
+  if (modo === "demo") return lecturaSimulada();
+  return pedir(modo === "nube" ? CONFIG.urlNube : base + "/datos");
+}
+
+// ---------------- Dibujo ----------------
+const sinDato = v => v === null || v === undefined || Number.isNaN(v);
+const fmt = (v, dec) => sinDato(v) ? "—" : Number(v).toFixed(dec);
+function fueraDeRango(id, v) {
+  const l = LIMITES[id];
+  return !!l && v !== null && v !== undefined && (v < l[0] || v > l[1]);
+}
+
+function linea(valores, color) {
+  const v = valores.filter(x => x !== null && x !== undefined);
+  if (v.length < 2) return '<svg class="linea" viewBox="0 0 300 56" preserveAspectRatio="none"></svg>';
+  let min = Math.min(...v), max = Math.max(...v);
+  if (max - min < 1e-6) { max += 1; min -= 1; }
+  const m = (max - min) * 0.15; min -= m; max += m;
+  const pts = v.map((y, i) => [(i / (v.length - 1)) * 300, 52 - ((y - min) / (max - min)) * 48]);
+  const d = pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
+  return '<svg class="linea" viewBox="0 0 300 56" preserveAspectRatio="none" role="img" aria-label="Tendencia reciente">' +
+         '<path d="' + d + ' L300 56 L0 56 Z" fill="' + color + '" opacity="0.10"/>' +
+         '<path d="' + d + '" fill="none" stroke="' + color + '" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>';
+}
+
+// Barra de color con la escala del parametro: el recuadro es el rango permitido y la aguja, el valor medido.
+function medidor(p, v) {
+  const [min, max] = p.escala, l = LIMITES[p.id];
+  const pos = x => Math.min(100, Math.max(0, (x - min) / (max - min) * 100));
+  return '<div class="medidor" aria-hidden="true" style="background:linear-gradient(90deg,' + p.tinte + ')">' +
+         (l ? '<i style="left:' + pos(l[0]) + '%;width:' + (pos(l[1]) - pos(l[0])) + '%"></i>' : "") +
+         (sinDato(v) ? "" : '<b style="left:' + pos(v).toFixed(1) + '%"></b>') + "</div>";
+}
+
+function pintar(d) {
+  // Tarjetas
+  document.getElementById("tarjetas").innerHTML = PARAMETROS.map(p => {
+    const v = d[p.id];
+    const mal = fueraDeRango(p.id, v);
+    const chip = sinDato(v) ? '<span class="chip gris">Pendiente</span>'
+               : LIMITES[p.id] ? '<span class="chip' + (mal ? ' mal' : '') + '">' + (mal ? "Fuera de rango" : "Normal") + '</span>' : "";
+    return '<article class="tarjeta" style="--c:' + p.color + '"><div class="nombre"><span>' + p.nombre + '</span>' + chip + '</div>' +
+           '<div class="valor">' + fmt(v, p.dec) + '<small>' + p.unidad + '</small></div>' + medidor(p, v) +
+           '<div class="limite">' + p.limite + '</div>' + linea(historial.map(h => h[p.id]), p.color) + '</article>';
+  }).join("");
+
+  // Semaforo y mascota: los dos salen de la misma regla
+  const problemas = [], alertas = [];
+  if (fueraDeRango("ph", d.ph)) { problemas.push("pH " + fmt(d.ph, 2)); alertas.push(d.ph < LIMITES.ph[0] ? PH_BAJO : PH_ALTO); }
+  if (fueraDeRango("ntu", d.ntu)) { problemas.push("turbidez " + fmt(d.ntu, 0) + " NTU"); alertas.push(AGUA_TURBIA); }
+  alertasMascota = sinDato(d.ph) && sinDato(d.ntu) ? null : alertas;
+  const sem = document.getElementById("semaforo");
+  sem.classList.remove("gris");
+  sem.classList.toggle("mal", problemas.length > 0);
+  document.getElementById("semTitulo").textContent = problemas.length ? "Atención: parámetro fuera de rango" : "Agua dentro de los límites";
+  document.getElementById("semDetalle").textContent = problemas.length
+    ? "Fuera de rango: " + problemas.join(" y ") + "."
+    : "Todos los parámetros medidos están en rango.";
+
+  // Tabla
+  document.getElementById("filas").innerHTML = historial.slice(-8).reverse().map(h => {
+    const mal = fueraDeRango("ph", h.ph) || fueraDeRango("ntu", h.ntu);
+    return "<tr><td>" + h.hora + "</td><td>" + fmt(h.temp, 1) + "</td><td>" + fmt(h.ph, 2) + "</td><td>" + fmt(h.ntu, 0) + "</td><td>" + fmt(h.ce, 0) +
+           '</td><td><span class="chip' + (mal ? " mal" : "") + '">' + (mal ? "Alerta" : "Normal") + "</span></td></tr>";
+  }).join("");
+
+  // Estado del equipo
+  const si = (ok, txt) => '<span class="chip' + (ok ? "" : " gris") + '">' + txt + "</span>";
+  document.getElementById("estado").innerHTML =
+    "<li><span>Internet</span>" + si(d.internet, d.internet ? "Con internet" : d.wifi ? "WiFi sin internet" : "Sin WiFi") + "</li>" +
+    "<li><span>Datos guardados en</span>" + si(d.respaldo || d.sd, d.respaldo && d.sd ? "ESP32 y microSD" : d.sd ? "microSD"
+                                               : d.respaldo ? "Memoria del ESP32" : "No disponible") + "</li>" +
+    "<li><span>Fecha y hora</span>" + si(d.reloj, d.reloj ? "En hora" : "Sin hora") + "</li>" +
+    "<li><span>GPS</span>" + si(d.gps === "si", d.gps === "si" ? "Con ubicación" : d.gps === "buscando" ? "Buscando señal" : "No detectado") + "</li>";
+  if (d.encendido !== undefined) {
+    const h = Math.floor(d.encendido / 3600), m = Math.floor(d.encendido % 3600 / 60);
+    document.getElementById("estado").innerHTML += "<li><span>Encendido hace</span>" + si(false, (h ? h + " h " : "") + m + " min") + "</li>";
+  }
+  document.getElementById("ubicacion").innerHTML = (d.lat && d.lng)
+    ? d.lat.toFixed(5) + ", " + d.lng.toFixed(5) + ' · <a href="https://www.google.com/maps?q=' + d.lat + "," + d.lng + '" target="_blank" rel="noopener">ver en el mapa</a>'
+    : "sin dato de GPS";
+
+  // Solo con un equipo real: nombre, direccion en el WiFi y descarga de lo guardado
+  if (d.nombre) document.getElementById("equipo").textContent = d.nombre;
+  const dir = document.getElementById("direccion");
+  dir.hidden = !d.ip;
+  dir.textContent = d.ip ? "Dirección en el WiFi: http://" + d.ip : "";
+  const descarga = document.getElementById("descarga");
+  descarga.hidden = !(modo === "local" && d.respaldo);
+  descarga.href = base + "/datos.csv";
+  descarga.textContent = "Descargar datos guardados (CSV" + (d.kb ? ", " + d.kb + " KB" : "") + ")";
+
+  document.getElementById("hora").textContent = historial.length ? historial[historial.length - 1].hora : "--:--:--";
+}
+
+function etiqueta(conRespuesta) {
+  const f = document.getElementById("fuente");
+  f.textContent = conRespuesta ? ETIQUETAS[modo][0] : "Sin respuesta del equipo";
+  f.className = "fuente " + (conRespuesta ? ETIQUETAS[modo][1] : "");
+}
+
+function sinRespuesta() {
+  etiqueta(false);
+  alertasMascota = null;
+  const sem = document.getElementById("semaforo");
+  sem.classList.remove("mal");
+  sem.classList.add("gris");
+  document.getElementById("semTitulo").textContent = "Sin respuesta del equipo";
+  document.getElementById("semDetalle").textContent = historial.length
+    ? "Último dato recibido a las " + historial[historial.length - 1].hora + ". Los valores de abajo pueden estar desactualizados."
+    : "Todavía no llegó ningún dato.";
+}
+
+function registrar(d, cuando) {
+  const t = cuando || new Date();
+  historial.push({ hora: t.toLocaleTimeString("es-PE", { hour12: false }), temp: d.temp, ph: d.ph, ntu: d.ntu, ce: d.ce ?? null });
+  while (historial.length > CONFIG.maxPuntos) historial.shift();
+}
+
+async function ciclo() {
+  try {
+    const d = await leer();
+    fallos = 0;
+    if (d.n === undefined || d.n !== ultimaN) { ultimaN = d.n; registrar(d); }
+    pintar(d);
+    etiqueta(true);
+  } catch (e) {
+    if (++fallos >= 3 || modo === "demo") sinRespuesta();   // con un equipo real, un corte corto no cambia la pantalla
+  }
+  setTimeout(ciclo, CONFIG.cadaMs);
+}
+
+(async function iniciar() {
+  const parametros = new URLSearchParams(location.search);
+  const ip = parametros.get("equipo");
+  if (ip) { base = "http://" + ip; modo = "local"; } else modo = CONFIG.fuente;
+
+  animar();
+  setInterval(animar, quieto ? 1000 : 60);
+
+  if (modo === "demo") {
+    document.getElementById("simular").hidden = false;
+    document.querySelectorAll("#simular button").forEach(b => { b.onclick = () => { simulado = { tipo: Number(b.dataset.s), quedan: 6 }; }; });
+    const ahora = Date.now();
+    for (let i = 40; i > 0; i--) registrar(lecturaSimulada(), new Date(ahora - i * CONFIG.cadaMs));
+    // index.html?alerta deja el agua turbia y el semaforo en rojo; ?alerta=1, 2 o 4 dejan pH bajo, pH alto o sin señal
+    if (parametros.has("alerta")) simulado = { tipo: Number(parametros.get("alerta")) || 3, quedan: 1e9 };
+  } else if (modo === "local") {
+    // El equipo guarda en memoria las ultimas lecturas: la pagina abre con el grafico lleno
+    try {
+      const h = await pedir(base + "/historial");
+      const ahora = Date.now();
+      h.lecturas.forEach(x => registrar({ temp: x[1], ph: x[2], ntu: x[3] }, new Date(ahora - x[0] * 1000)));
+      ultimaN = h.n;
+    } catch (e) {}
+  }
+  ciclo();
+})();
+</script>
+</body>
+</html>

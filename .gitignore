@@ -1,0 +1,10 @@
+# claves reales: nunca a GitHub
+claves.h
+claves_nube.h
+.env
+# generados / locales
+*.log
+*.pid
+__pycache__/
+node_modules/
+build/
