@@ -402,7 +402,7 @@ const EXPLICA = [
 ];
 const SIN_MEDICION = {
   senal: "No llega información de este equipo. Tiene que estar encendido y conectado al mismo WiFi que este celular o computadora.",
-  sensores: "El equipo está encendido y responde, pero sus sensores de pH y de turbidez no están conectados o no dan una lectura válida."
+  sensores: "El equipo está encendido y responde, pero falta una lectura válida de pH o de turbidez: su sensor no está conectado o no mide bien. Sin las dos no se puede decir si el agua está bien."
 };
 
 // los tres puntos del rio, cada uno es un equipo con su mascota, la pagina la entrega cualquiera de ellos
@@ -816,7 +816,7 @@ function animar() {
     for (let i = 0; i < lienzo.length; i++) puntos[i] = colores[lienzo[i]];
     n.papel.putImageData(imagen, 0, 0);
     // sin medicion hay dos casos distintos: el equipo no contesta, o contesta pero no tiene sensores
-    const texto = est === SIN_DATO ? (n.motivo === "sensores" ? "Sin sensores" : "Sin señal") : ANIMOS[est];
+    const texto = est === SIN_DATO ? textoSinMedir(n) : ANIMOS[est];
     if (est !== n.animoVisto || texto !== n.animoTexto) {
       n.animoVisto = est;
       n.animoTexto = texto;
@@ -898,6 +898,7 @@ async function leer(n) {
 // anterior mandan ese numero igual, los de ahora ya mandan "sin dato")
 function limpiar(d) {
   if (!sinDato(d.ph) && (d.ph < 0 || d.ph > 14)) d.ph = null;
+  if (d.ce === 0) d.ce = null;  // el equipo manda 0 cuando su sensor no da senal, ningun rio tiene 0
   return d;
 }
 
@@ -908,7 +909,7 @@ async function cargarHistorial(n) {
       const desde = new Date(Date.now() - CONFIG.maxPuntos * CONFIG.cadaMs).toISOString();
       const filas = await nube("lecturas?select=id,fecha,temp,ph,ntu,ce&equipo=eq." + (n.i + 1) + "&fecha=gte." + desde + "&order=fecha.asc");
       n.historial.length = 0;
-      filas.forEach(f => registrar(n, f, new Date(f.fecha)));
+      filas.forEach(f => registrar(n, limpiar(f), new Date(f.fecha)));
       n.ultimaN = filas.length ? filas[filas.length - 1].id : null;
       return;
     }
@@ -931,6 +932,7 @@ function ubicar(ips) {
 
 // ---------------- dibujo ----------------
 const sinDato = v => v === null || v === undefined || Number.isNaN(v);
+const textoSinMedir = n => n.motivo !== "sensores" ? "Sin señal" : sinDato(n.dato.ph) && sinDato(n.dato.ntu) ? "Sin sensores" : "Faltan datos";
 const fmt = (v, dec) => sinDato(v) ? "—" : Number(v).toFixed(dec);
 function fueraDeRango(id, v) {
   const l = LIMITES[id];
@@ -1034,7 +1036,7 @@ async function cargarResumen(n) {
   else if (modo === "nube") {    // la nube calcula los promedios de cada hora
     try {
       n.resumen = (await nubeTodo("rpc/resumen_por_hora?p_equipo=" + (n.i + 1))).map(f => ({
-        t: new Date(f.hora).getTime(), temp: f.temp, ph: f.ph, phMin: f.ph_min, phMax: f.ph_max, ntu: f.ntu, ntuMax: f.ntu_max, ce: f.ce }));
+        t: new Date(f.hora).getTime(), temp: f.temp, ph: f.ph, phMin: f.ph_min, phMax: f.ph_max, ntu: f.ntu, ntuMax: f.ntu_max, ce: f.ce || null }));
     } catch (e) { n.resumen = n.resumen || []; }
   } else if (n.base !== null) {
     try {
@@ -1224,6 +1226,8 @@ function pintarResumen() {
     texto = bien.length === 3 ? "Agua dentro de los límites en los 3 puntos"
           : "Agua dentro de los límites en " + bien.length + (bien.length > 1 ? " puntos" : " punto") + "; sin medición en " + (3 - bien.length);
   }
+  const incompletos = nodos.filter(n => n.motivo === "sensores" && n.alertas === null).length;
+  if (!mal.length && !bien.length && incompletos) texto = "Faltan lecturas en " + incompletos + (incompletos > 1 ? " puntos" : " punto") + ": todavía no se puede decir cómo está el agua";
   if (modo === "nube" && !CONFIG.urlNube) texto = "Esta página todavía no está conectada a la base de datos";
   document.getElementById("resumen").className = "resumen " + clase;
   document.getElementById("resumenTexto").textContent = texto;
@@ -1254,7 +1258,7 @@ function pintarTabla() {
 
   let h = fila("Estado del agua", "", n => {
     const mide = n.alertas !== null, mal = mide && n.alertas.length > 0;
-    const texto = !mide ? (n.motivo === "sensores" ? "Sin sensores" : "Sin señal") : mal ? n.alertas.map(a => ANIMOS[a]).join(" y ") : "Agua bien";
+    const texto = !mide ? textoSinMedir(n) : mal ? n.alertas.map(a => ANIMOS[a]).join(" y ") : "Agua bien";
     return celda(n, '<span class="chip' + (mal ? " mal" : mide ? "" : " gris") + '">' + texto + "</span>");
   });
   PARAMETROS.forEach(p => {
@@ -1296,11 +1300,11 @@ function pintarDetalle() {
   sem.classList.toggle("gris", !mide);
   sem.classList.toggle("mal", caso === "mal");
   document.getElementById("semTitulo").textContent = n.titulo + ": " +
-    { bien: "agua dentro de los límites", mal: "parámetro fuera de rango", sensores: "equipo encendido, sin sensores",
+    { bien: "agua dentro de los límites", mal: "parámetro fuera de rango", sensores: "equipo encendido, faltan lecturas",
       senal: n.dato ? "sin respuesta del equipo" : "sin señal" }[caso];
   document.getElementById("semDetalle").textContent =
     { bien: "Todos los parámetros medidos están en rango.", mal: "Fuera de rango: " + n.problemas.join(" y ") + ".",
-      sensores: "Llegan datos del equipo, pero ni el pH ni la turbidez traen una lectura válida.",
+      sensores: "Llegan datos del equipo, pero falta una lectura válida de pH o de turbidez.",
       senal: ultima ? "Último dato recibido a las " + ultima + ". Los valores de abajo pueden estar desactualizados." : "Todavía no llegó ningún dato de este punto." }[caso];
   document.getElementById("explica").textContent =
     caso === "mal" ? n.alertas.map(a => EXPLICA[a]).join(" ") : caso === "bien" ? EXPLICA[0] : SIN_MEDICION[caso];
@@ -1318,9 +1322,9 @@ function pintarDetalle() {
 
   document.getElementById("tituloTabla").textContent = "Últimas lecturas · " + n.titulo;
   document.getElementById("filas").innerHTML = n.historial.slice(-8).reverse().map(h => {
-    const mal = fueraDeRango("ph", h.ph) || fueraDeRango("ntu", h.ntu), nada = sinDato(h.ph) && sinDato(h.ntu);
+    const mal = fueraDeRango("ph", h.ph) || fueraDeRango("ntu", h.ntu), nada = sinDato(h.ph) || sinDato(h.ntu);
     return "<tr><td>" + h.hora + "</td><td>" + fmt(h.temp, 1) + "</td><td>" + fmt(h.ph, 2) + "</td><td>" + fmt(h.ntu, 0) + "</td><td>" + fmt(h.ce, 0) +
-           '</td><td><span class="chip' + (mal ? " mal" : nada ? " gris" : "") + '">' + (mal ? "Alerta" : nada ? "Sin sensor" : "Normal") + "</span></td></tr>";
+           '</td><td><span class="chip' + (mal ? " mal" : nada ? " gris" : "") + '">' + (mal ? "Alerta" : nada ? "Falta dato" : "Normal") + "</span></td></tr>";
   }).join("");
 
   const si = (ok, txt) => '<span class="chip' + (ok ? "" : " gris") + '">' + txt + "</span>";
@@ -1381,9 +1385,10 @@ async function ciclo(n) {
     const alertas = [];
     if (fueraDeRango("ph", d.ph)) { n.problemas.push("pH " + fmt(d.ph, 2)); alertas.push(d.ph < LIMITES.ph[0] ? PH_BAJO : PH_ALTO); }
     if (fueraDeRango("ntu", d.ntu)) { n.problemas.push("turbidez " + fmt(d.ntu, 0) + " NTU"); alertas.push(AGUA_TURBIA); }
-    const sinSensores = sinDato(d.ph) && sinDato(d.ntu);
-    n.alertas = sinSensores ? null : alertas;
-    n.motivo = sinSensores ? "sensores" : "";
+    // "Agua bien" pide las dos lecturas: un dato que falta no es un dato bueno
+    const faltan = !alertas.length && (sinDato(d.ph) || sinDato(d.ntu));
+    n.alertas = faltan ? null : alertas;
+    n.motivo = faltan ? "sensores" : "";
   } catch (e) {
     if (++n.fallos >= 3 || modo === "demo") { n.alertas = null; n.motivo = "senal"; }   // con un equipo real, un corte corto no cambia la pantalla
   }
