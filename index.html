@@ -38,6 +38,7 @@
   .resumen.ok i { background: #40c057; box-shadow: 0 0 0 4px rgba(64,192,87,.25); }
   .resumen.mal { color: var(--mal); }
   .resumen.mal i { background: #fa5252; box-shadow: 0 0 0 4px rgba(250,82,82,.25); }
+  .aviso-senal { width: fit-content; margin-top: 8px; padding: 7px 16px; border-radius: 16px; background: #fff3bf; color: #664d03; font-weight: 800; font-size: .95rem; }
 
   /* las tres peceras: una por punto del rio,con su mascota, la elegida muestra su detalle abajo */
   .peceras { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 6px; }
@@ -217,6 +218,7 @@
       <h1>Monitoreo del Río San Juan de Rancas</h1>
       <div class="sub">Sistema IoT de parámetros fisicoquímicos del agua · <span id="equipo">3 puntos de monitoreo</span> · Actualizado <span id="hora">--:--:--</span></div>
       <div class="resumen" id="resumen" aria-live="polite"><i></i><span id="resumenTexto">Conectando con los equipos</span></div>
+      <div class="aviso-senal" id="avisoSenal" role="alert" hidden></div>
     </div>
     <div class="lado">
       <span id="simular" class="lado" hidden>Simular en el punto elegido
@@ -880,13 +882,15 @@ function ultimasDeLaNube() {
   }
   return ultimasNube;
 }
-const MINUTOS_SIN_DATOS = 3;  //si un equipo no sube nada en este tiempo, su pecera queda "Sin senal"
+// shortcut: compara con el reloj de quien mira la pagina, si ese reloj esta 1 min mal da un aviso falso
+const MINUTOS_SIN_DATOS = 1;  // el equipo sube cada 20 s: 1 min son 3 envios perdidos, uno solo puede fallar sin q sea un corte
 
 async function leer(n) {
   if (modo === "demo") return lecturaSimulada(n);
   if (modo === "nube") {
     const fila = (await ultimasDeLaNube()).find(f => f.equipo === n.i + 1);
-    if (!fila || Date.now() - new Date(fila.fecha) > MINUTOS_SIN_DATOS * 60000) throw new Error("sin datos recientes");
+    if (fila) n.vistoEn = new Date(fila.fecha).getTime();
+    if (!fila || Date.now() - n.vistoEn > MINUTOS_SIN_DATOS * 60000) throw Object.assign(new Error("sin datos recientes"), { callado: true });
     return { n: fila.id, fecha: fila.fecha, temp: fila.temp, ph: fila.ph, ntu: fila.ntu, ce: fila.ce, lat: fila.lat, lng: fila.lng,
              gps: fila.gps, encendido: fila.encendido, wifi: true, internet: true, nube: true, reloj: true, respaldo: false, sd: false };
   }
@@ -1213,6 +1217,11 @@ async function exportarJuntos(cuales) {
                      (faltan.length ? " Sin datos de: " + faltan.join(", ") + "." : "");
 }
 
+function haceCuanto(t) {
+  const min = Math.max(1, Math.round((Date.now() - t) / 60000));
+  return min < 60 ? "hace " + min + " min" : min < 2880 ? "hace " + Math.round(min / 60) + " h" : "hace " + Math.round(min / 1440) + " días";
+}
+
 // la frase de arriba: como estan los tres puntos - tambien va al titulo de la pestana
 function pintarResumen() {
   const mal = nodos.filter(n => n.alertas !== null && n.alertas.length), bien = nodos.filter(n => n.alertas !== null && !n.alertas.length);
@@ -1231,7 +1240,11 @@ function pintarResumen() {
   if (modo === "nube" && !CONFIG.urlNube) texto = "Esta página todavía no está conectada a la base de datos";
   document.getElementById("resumen").className = "resumen " + clase;
   document.getElementById("resumenTexto").textContent = texto;
-  document.title = (mal.length ? "⚠ " + mal.length + " en alerta · " : "") + "Río San Juan de Rancas";
+  const callados = nodos.filter(n => n.alertas === null && n.motivo === "senal" && n.callado && n.vistoEn);
+  const aviso = document.getElementById("avisoSenal");
+  aviso.hidden = !callados.length;
+  aviso.textContent = "⚠ Dejó de enviar datos: " + callados.map(n => n.titulo + " (" + haceCuanto(n.vistoEn) + ")").join(", ");
+  document.title = (callados.length ? "⚠ Sin señal · " : "") + (mal.length ? "⚠ " + mal.length + " en alerta · " : "") + "Río San Juan de Rancas";
   document.getElementById("equipo").textContent = "3 puntos de monitoreo, " + nodos.filter(responde).length + " con señal";
   document.getElementById("graficos").innerHTML = PARAMETROS.map(grafico).join("");
   pintarTabla();
@@ -1378,6 +1391,7 @@ async function ciclo(n) {
     const d = limpiar(await leer(n));
     n.fallos = 0;
     n.dato = d;
+    if (modo !== "nube") n.vistoEn = Date.now();
     if (d.n === undefined || d.n !== n.ultimaN) { n.ultimaN = d.n; registrar(n, d, d.fecha ? new Date(d.fecha) : undefined); }
     if (n.i === propio && d.ips) ubicar(d.ips);
     // la luz, el aviso y la mascota salen de la misma regla
@@ -1390,7 +1404,8 @@ async function ciclo(n) {
     n.alertas = faltan ? null : alertas;
     n.motivo = faltan ? "sensores" : "";
   } catch (e) {
-    if (++n.fallos >= 3 || modo === "demo") { n.alertas = null; n.motivo = "senal"; }   // con un equipo real, un corte corto no cambia la pantalla
+    // en la nube un error de red es de quien mira, no del equipo: el aviso solo sale si la base confirma q dejo de subir
+    if (e.callado || ++n.fallos >= 3 || modo === "demo") { n.alertas = null; n.motivo = "senal"; n.callado = modo !== "nube" || !!e.callado; }   // con un equipo real, un corte corto no cambia la pantalla
   }
   pintarPecera(n);
   if (n.i === elegido) pintarDetalle();
@@ -1482,7 +1497,7 @@ function elegir(i) {
   } else if (modo === "nube") {
     // los equipos suben cada 20 s: basta con mirar cada 10 s (y asi la nube gasta menos)
     CONFIG.cadaMs = 10000;
-    SIN_MEDICION.senal = "Este equipo no ha subido datos en los últimos " + MINUTOS_SIN_DATOS + " minutos: puede estar apagado o sin internet.";
+    SIN_MEDICION.senal = "Este equipo no ha subido datos en el último minuto: puede estar apagado o sin internet.";
     if (!CONFIG.urlNube) document.getElementById("resumenTexto").textContent = "Esta página todavía no está conectada a la base de datos";
     await Promise.all(nodos.map(cargarHistorial));
   } else if (modo === "local") {
