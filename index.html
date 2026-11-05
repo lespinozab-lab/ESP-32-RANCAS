@@ -1144,8 +1144,9 @@ function pintarMapa() {
       // dos fondos: la foto de satelite (se ve el rio) y el plano de calles
       const satelite = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
                                    { maxZoom: 18, attribution: "Imágenes © Esri" }).addTo(mapa);
-      const calles = L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
-                                 { maxZoom: 19, subdomains: "abcd", attribution: "© OpenStreetMap, © CARTO" });
+      // calles tmb de esri: carto ahora pide clave y sin ella entrega una imagen de aviso q parece cargada bien
+      const calles = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
+                                 { maxZoom: 19, attribution: "Mapa © Esri" });
       L.control.layers({ "Satélite": satelite, "Calles": calles }, null, { collapsed: false }).addTo(mapa);
       pintarMapa();
     };
@@ -1442,7 +1443,8 @@ function elegir(i) {
   boton.onclick = () => {
     sencilla = !sencilla; poner();
     try { localStorage.setItem("vista", sencilla ? "sencilla" : "tecnica"); } catch (e) {}
-    if (mapa) mapa.invalidateSize();
+    // si el mapa nacio oculto quedo en zoom 0: al mostrarlo hay q volver a encuadrar los puntos
+    if (mapa) { mapa.invalidateSize(); mapaVisto = mapaLugares = ""; pintarMapa(); }
   };
   const queEs = document.getElementById("queEs");
   document.getElementById("acerca").onclick = () => queEs.showModal();
