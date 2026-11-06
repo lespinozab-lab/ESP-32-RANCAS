@@ -971,7 +971,7 @@ function medidor(p, v) {
 
 //un parametro de los tres puntos a la vez: una linea por punto sobre la franja permitida
 // series: los datos de cada punto (con su momento en "t"), pie: lo que se escribe abajo a la izquierda y a la derecha
-function trazar(p, series, desde, hasta, pie) {
+function trazar(p, series, desde, hasta, pie, corte) {
   const l = LIMITES[p.id], ancho = Math.max(1, hasta - desde);
   series = series.map(serie => serie.filter(h => h.t >= desde && h.t <= hasta && !sinDato(h[p.id])));
   const valores = series.flat().map(h => h[p.id]);
@@ -985,13 +985,16 @@ function trazar(p, series, desde, hasta, pie) {
   let s = '<svg class="comparado" viewBox="0 0 320 104" role="img" aria-label="' + p.nombre + ' de los tres puntos">';
   if (l) s += '<rect x="' + X0 + '" y="' + y(l[1]) + '" width="' + (X1 - X0) + '" height="' + (y(l[0]) - y(l[1])).toFixed(1) + '" fill="#40c057" opacity=".16"/>';
   s += '<path d="M' + X0 + " " + Y0 + "V" + Y1 + "H" + X1 + '" fill="none" stroke="#c9dfe5"/>' +
-       '<text x="' + (X0 - 4) + '" y="' + (Y0 + 7) + '" text-anchor="end">' + fmt(max, max < 20 ? 1 : 0) + "</text>" +
-       '<text x="' + (X0 - 4) + '" y="' + Y1 + '" text-anchor="end">' + fmt(min, max < 20 ? 1 : 0) + "</text>" +
+       (valores.length ? '<text x="' + (X0 - 4) + '" y="' + (Y0 + 7) + '" text-anchor="end">' + fmt(max, max < 20 ? 1 : 0) + "</text>" +
+                         '<text x="' + (X0 - 4) + '" y="' + Y1 + '" text-anchor="end">' + fmt(min, max < 20 ? 1 : 0) + "</text>"
+                       : '<text x="' + (X0 + X1) / 2 + '" y="' + (Y0 + Y1) / 2 + '" text-anchor="middle">Sin lecturas en este periodo</text>') +
        '<text x="' + X0 + '" y="101">' + pie[0] + '</text><text x="' + X1 + '" y="101" text-anchor="end">' + pie[1] + "</text>";
   series.forEach((serie, i) => {
-    if (serie.length === 1) s += '<circle cx="' + x(serie[0].t) + '" cy="' + y(serie[0][p.id]) + '" r="2" fill="' + TRAZOS[i] + '"/>';
-    if (serie.length > 1) s += '<path d="' + serie.map((h, k) => (k ? "L" : "M") + x(h.t) + " " + y(h[p.id])).join("") +
-                               '" fill="none" stroke="' + TRAZOS[i] + '" stroke-width="1.8" stroke-linejoin="round"/>';
+    // no se une a traves de un hueco sin datos, la lectura q queda sola va como punto
+    const unida = k => k > 0 && k < serie.length && serie[k].t - serie[k - 1].t <= corte;
+    if (serie.length) s += '<path d="' + serie.map((h, k) => (unida(k) ? "L" : "M") + x(h.t) + " " + y(h[p.id])).join("") +
+                           '" fill="none" stroke="' + TRAZOS[i] + '" stroke-width="1.8" stroke-linejoin="round"/>';
+    serie.forEach((h, k) => { if (!unida(k) && !unida(k + 1)) s += '<circle cx="' + x(h.t) + '" cy="' + y(h[p.id]) + '" r="2.5" fill="' + TRAZOS[i] + '"/>'; });
   });
   return s + "</svg>";
 }
@@ -1005,7 +1008,7 @@ function grafico(p) {
   const hace = ahora - desde < 90000 ? Math.round((ahora - desde) / 1000) + " s" : Math.round((ahora - desde) / 60000) + " min";
   const ultimos = nodos.map(n => '<span><i style="background:' + TRAZOS[n.i] + '"></i>' + fmt(responde(n) ? n.dato[p.id] : null, p.dec) + "</span>").join("");
   return '<div class="graf">' + tituloGrafico(p) + '<div class="ultimos">' + ultimos + "</div>" +
-         trazar(p, nodos.map(n => n.historial), desde, ahora, ["hace " + hace, "ahora"]) + "</div>";
+         trazar(p, nodos.map(n => n.historial), desde, ahora, ["hace " + hace, "ahora"], 90000) + "</div>";
 }
 
 // ---------------- registro por dias, semanas y meses ----------------
@@ -1081,13 +1084,14 @@ function pintarRegistro() {
   const primero = Math.min(ahora, ...todos.map(r => r.length ? r[0].t : ahora));
   const desde = rango ? ahora - rango * 3600000 : primero;
   const enRango = todos.map(r => r.filter(f => f.t >= desde));
-  const series = rango && rango <= 168 ? enRango : enRango.map(porDia);
-  const dia = t => new Date(t).toLocaleDateString("es-PE", { day: "2-digit", month: "2-digit" });
+  const porHoras = rango && rango <= 168, series = porHoras ? enRango : enRango.map(porDia);
+  const hay = series.flat().map(f => f.t), ini = hay.length ? Math.min(...hay) : desde, fin = hay.length ? Math.max(...hay) : ahora;  // el eje va de la primera a la ultima lectura: asi no queda apretado en una esquina
+  const dia = t => new Date(t).toLocaleString("es-PE", porHoras ? { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false } : { day: "2-digit", month: "2-digit" });
   document.querySelectorAll("#rango button").forEach(b => b.setAttribute("aria-pressed", Number(b.dataset.h) === rango));
   document.getElementById("registroNota").textContent = enRango.some(r => r.length) ? ""
     : "Todavía no hay registro en ese periodo: se guarda una fila por hora mientras el equipo está encendido y tiene la hora.";
   document.getElementById("registroGraficos").innerHTML = PARAMETROS.map(p =>
-    '<div class="graf">' + tituloGrafico(p) + trazar(p, series, desde, ahora, [dia(desde), "hoy"]) + "</div>").join("");
+    '<div class="graf">' + tituloGrafico(p) + trazar(p, series, ini, fin, [dia(ini), dia(fin)], porHoras ? 2 * 3600000 : 2 * 86400000) + "</div>").join("");
   const extremo = (valores, f) => { const v = valores.filter(x => !sinDato(x)); return v.length ? f(...v) : null; };
   document.getElementById("resumenFilas").innerHTML = nodos.map(n => {
     const r = enRango[n.i];
