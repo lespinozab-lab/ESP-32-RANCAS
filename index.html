@@ -38,6 +38,7 @@
   .resumen.ok i { background: #40c057; box-shadow: 0 0 0 4px rgba(64,192,87,.25); }
   .resumen.mal { color: var(--mal); }
   .resumen.mal i { background: #fa5252; box-shadow: 0 0 0 4px rgba(250,82,82,.25); }
+  .aviso-senal { width: fit-content; margin-top: 8px; padding: 7px 16px; border-radius: 16px; background: #fff3bf; color: #664d03; font-weight: 800; font-size: .95rem; }
 
   /* las tres peceras: una por punto del rio,con su mascota, la elegida muestra su detalle abajo */
   .peceras { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 6px; }
@@ -217,6 +218,7 @@
       <h1>Monitoreo del Río San Juan de Rancas</h1>
       <div class="sub">Sistema IoT de parámetros fisicoquímicos del agua · <span id="equipo">3 puntos de monitoreo</span> · Actualizado <span id="hora">--:--:--</span></div>
       <div class="resumen" id="resumen" aria-live="polite"><i></i><span id="resumenTexto">Conectando con los equipos</span></div>
+      <div class="aviso-senal" id="avisoSenal" role="alert" hidden></div>
     </div>
     <div class="lado">
       <span id="simular" class="lado" hidden>Simular en el punto elegido
@@ -271,11 +273,12 @@
         <tbody id="resumenFilas"></tbody>
       </table>
     </div>
-    <p class="limite" style="margin:10px 0 0">Cada equipo guarda un resumen por hora en su memoria. El último día y la última semana se ven hora por hora; el mes y todo, día por día.</p>
+    <p class="limite" id="notaRegistro" style="margin:10px 0 0">Cada equipo guarda un resumen por hora en su memoria. El último día y la última semana se ven hora por hora; el mes y todo, día por día.</p>
   </section>
 
   <section class="tarjeta seccion tecnica" id="norma">
     <h3>¿Cumple la norma?</h3>
+    <p class="limite" id="notaNorma" style="margin:0 0 10px" hidden>Solo cuenta la lectura tomada durante una salida al río registrada.</p>
     <div class="tabla-caja">
       <table>
         <thead><tr id="normaPuntos"><th>Estándar de Calidad Ambiental para agua (D.S. 004-2017-MINAM)</th></tr></thead>
@@ -402,7 +405,8 @@ const EXPLICA = [
 ];
 const SIN_MEDICION = {
   senal: "No llega información de este equipo. Tiene que estar encendido y conectado al mismo WiFi que este celular o computadora.",
-  sensores: "El equipo está encendido y responde, pero sus sensores de pH y de turbidez no están conectados o no dan una lectura válida."
+  prueba: "El equipo está enviando, pero no hay una salida al río registrada para esta hora: son lecturas de prueba y no cuentan para la norma ni para el registro.",
+  sensores: "El equipo está encendido y responde, pero falta una lectura válida de pH o de turbidez: su sensor no está conectado o no mide bien. Sin las dos no se puede decir si el agua está bien."
 };
 
 // los tres puntos del rio, cada uno es un equipo con su mascota, la pagina la entrega cualquiera de ellos
@@ -816,7 +820,7 @@ function animar() {
     for (let i = 0; i < lienzo.length; i++) puntos[i] = colores[lienzo[i]];
     n.papel.putImageData(imagen, 0, 0);
     // sin medicion hay dos casos distintos: el equipo no contesta, o contesta pero no tiene sensores
-    const texto = est === SIN_DATO ? (n.motivo === "sensores" ? "Sin sensores" : "Sin señal") : ANIMOS[est];
+    const texto = est === SIN_DATO ? textoSinMedir(n) : ANIMOS[est];
     if (est !== n.animoVisto || texto !== n.animoTexto) {
       n.animoVisto = est;
       n.animoTexto = texto;
@@ -880,14 +884,16 @@ function ultimasDeLaNube() {
   }
   return ultimasNube;
 }
-const MINUTOS_SIN_DATOS = 3;  //si un equipo no sube nada en este tiempo, su pecera queda "Sin senal"
+// shortcut: compara con el reloj de quien mira la pagina, si ese reloj esta 1 min mal da un aviso falso
+const MINUTOS_SIN_DATOS = 1;  // el equipo sube cada 20 s: 1 min son 3 envios perdidos, uno solo puede fallar sin q sea un corte
 
 async function leer(n) {
   if (modo === "demo") return lecturaSimulada(n);
   if (modo === "nube") {
     const fila = (await ultimasDeLaNube()).find(f => f.equipo === n.i + 1);
-    if (!fila || Date.now() - new Date(fila.fecha) > MINUTOS_SIN_DATOS * 60000) throw new Error("sin datos recientes");
-    return { n: fila.id, fecha: fila.fecha, temp: fila.temp, ph: fila.ph, ntu: fila.ntu, ce: fila.ce, lat: fila.lat, lng: fila.lng,
+    if (fila) n.vistoEn = new Date(fila.fecha).getTime();
+    if (!fila || Date.now() - n.vistoEn > MINUTOS_SIN_DATOS * 60000) throw Object.assign(new Error("sin datos recientes"), { callado: true });
+    return { n: fila.id, fecha: fila.fecha, temp: fila.temp, ph: fila.ph, ntu: fila.ntu, ce: fila.ce, lat: fila.lat, lng: fila.lng, enSalida: fila.en_salida,
              gps: fila.gps, encendido: fila.encendido, wifi: true, internet: true, nube: true, reloj: true, respaldo: false, sd: false };
   }
   if (n.base === null) throw new Error("todavia no se sabe donde esta ese equipo");
@@ -898,6 +904,7 @@ async function leer(n) {
 // anterior mandan ese numero igual, los de ahora ya mandan "sin dato")
 function limpiar(d) {
   if (!sinDato(d.ph) && (d.ph < 0 || d.ph > 14)) d.ph = null;
+  if (d.ce === 0) d.ce = null;  // el equipo manda 0 cuando su sensor no da senal, ningun rio tiene 0
   return d;
 }
 
@@ -908,7 +915,7 @@ async function cargarHistorial(n) {
       const desde = new Date(Date.now() - CONFIG.maxPuntos * CONFIG.cadaMs).toISOString();
       const filas = await nube("lecturas?select=id,fecha,temp,ph,ntu,ce&equipo=eq." + (n.i + 1) + "&fecha=gte." + desde + "&order=fecha.asc");
       n.historial.length = 0;
-      filas.forEach(f => registrar(n, f, new Date(f.fecha)));
+      filas.forEach(f => registrar(n, limpiar(f), new Date(f.fecha)));
       n.ultimaN = filas.length ? filas[filas.length - 1].id : null;
       return;
     }
@@ -931,13 +938,14 @@ function ubicar(ips) {
 
 // ---------------- dibujo ----------------
 const sinDato = v => v === null || v === undefined || Number.isNaN(v);
+const textoSinMedir = n => n.motivo === "senal" ? "Sin señal" : n.motivo === "prueba" ? "En prueba" : sinDato(n.dato.ph) && sinDato(n.dato.ntu) ? "Sin sensores" : "Faltan datos";
 const fmt = (v, dec) => sinDato(v) ? "—" : Number(v).toFixed(dec);
 function fueraDeRango(id, v) {
   const l = LIMITES[id];
   return !!l && v !== null && v !== undefined && (v < l[0] || v > l[1]);
 }
 // un equipo responde si manda datos, aunque sus sensores no midan
-const responde = n => n.alertas !== null || n.motivo === "sensores";
+const responde = n => n.motivo !== "senal";
 
 function linea(valores, color) {
   const v = valores.filter(x => x !== null && x !== undefined);
@@ -963,7 +971,7 @@ function medidor(p, v) {
 
 //un parametro de los tres puntos a la vez: una linea por punto sobre la franja permitida
 // series: los datos de cada punto (con su momento en "t"), pie: lo que se escribe abajo a la izquierda y a la derecha
-function trazar(p, series, desde, hasta, pie) {
+function trazar(p, series, desde, hasta, pie, corte) {
   const l = LIMITES[p.id], ancho = Math.max(1, hasta - desde);
   series = series.map(serie => serie.filter(h => h.t >= desde && h.t <= hasta && !sinDato(h[p.id])));
   const valores = series.flat().map(h => h[p.id]);
@@ -977,13 +985,16 @@ function trazar(p, series, desde, hasta, pie) {
   let s = '<svg class="comparado" viewBox="0 0 320 104" role="img" aria-label="' + p.nombre + ' de los tres puntos">';
   if (l) s += '<rect x="' + X0 + '" y="' + y(l[1]) + '" width="' + (X1 - X0) + '" height="' + (y(l[0]) - y(l[1])).toFixed(1) + '" fill="#40c057" opacity=".16"/>';
   s += '<path d="M' + X0 + " " + Y0 + "V" + Y1 + "H" + X1 + '" fill="none" stroke="#c9dfe5"/>' +
-       '<text x="' + (X0 - 4) + '" y="' + (Y0 + 7) + '" text-anchor="end">' + fmt(max, max < 20 ? 1 : 0) + "</text>" +
-       '<text x="' + (X0 - 4) + '" y="' + Y1 + '" text-anchor="end">' + fmt(min, max < 20 ? 1 : 0) + "</text>" +
+       (valores.length ? '<text x="' + (X0 - 4) + '" y="' + (Y0 + 7) + '" text-anchor="end">' + fmt(max, max < 20 ? 1 : 0) + "</text>" +
+                         '<text x="' + (X0 - 4) + '" y="' + Y1 + '" text-anchor="end">' + fmt(min, max < 20 ? 1 : 0) + "</text>"
+                       : '<text x="' + (X0 + X1) / 2 + '" y="' + (Y0 + Y1) / 2 + '" text-anchor="middle">Sin lecturas en este periodo</text>') +
        '<text x="' + X0 + '" y="101">' + pie[0] + '</text><text x="' + X1 + '" y="101" text-anchor="end">' + pie[1] + "</text>";
   series.forEach((serie, i) => {
-    if (serie.length === 1) s += '<circle cx="' + x(serie[0].t) + '" cy="' + y(serie[0][p.id]) + '" r="2" fill="' + TRAZOS[i] + '"/>';
-    if (serie.length > 1) s += '<path d="' + serie.map((h, k) => (k ? "L" : "M") + x(h.t) + " " + y(h[p.id])).join("") +
-                               '" fill="none" stroke="' + TRAZOS[i] + '" stroke-width="1.8" stroke-linejoin="round"/>';
+    // no se une a traves de un hueco sin datos, la lectura q queda sola va como punto
+    const unida = k => k > 0 && k < serie.length && serie[k].t - serie[k - 1].t <= corte;
+    if (serie.length) s += '<path d="' + serie.map((h, k) => (unida(k) ? "L" : "M") + x(h.t) + " " + y(h[p.id])).join("") +
+                           '" fill="none" stroke="' + TRAZOS[i] + '" stroke-width="1.8" stroke-linejoin="round"/>';
+    serie.forEach((h, k) => { if (!unida(k) && !unida(k + 1)) s += '<circle cx="' + x(h.t) + '" cy="' + y(h[p.id]) + '" r="2.5" fill="' + TRAZOS[i] + '"/>'; });
   });
   return s + "</svg>";
 }
@@ -997,7 +1008,7 @@ function grafico(p) {
   const hace = ahora - desde < 90000 ? Math.round((ahora - desde) / 1000) + " s" : Math.round((ahora - desde) / 60000) + " min";
   const ultimos = nodos.map(n => '<span><i style="background:' + TRAZOS[n.i] + '"></i>' + fmt(responde(n) ? n.dato[p.id] : null, p.dec) + "</span>").join("");
   return '<div class="graf">' + tituloGrafico(p) + '<div class="ultimos">' + ultimos + "</div>" +
-         trazar(p, nodos.map(n => n.historial), desde, ahora, ["hace " + hace, "ahora"]) + "</div>";
+         trazar(p, nodos.map(n => n.historial), desde, ahora, ["hace " + hace, "ahora"], 90000) + "</div>";
 }
 
 // ---------------- registro por dias, semanas y meses ----------------
@@ -1034,7 +1045,7 @@ async function cargarResumen(n) {
   else if (modo === "nube") {    // la nube calcula los promedios de cada hora
     try {
       n.resumen = (await nubeTodo("rpc/resumen_por_hora?p_equipo=" + (n.i + 1))).map(f => ({
-        t: new Date(f.hora).getTime(), temp: f.temp, ph: f.ph, phMin: f.ph_min, phMax: f.ph_max, ntu: f.ntu, ntuMax: f.ntu_max, ce: f.ce }));
+        t: new Date(f.hora).getTime(), temp: f.temp, ph: f.ph, phMin: f.ph_min, phMax: f.ph_max, ntu: f.ntu, ntuMax: f.ntu_max, ce: f.ce || null }));
     } catch (e) { n.resumen = n.resumen || []; }
   } else if (n.base !== null) {
     try {
@@ -1073,13 +1084,14 @@ function pintarRegistro() {
   const primero = Math.min(ahora, ...todos.map(r => r.length ? r[0].t : ahora));
   const desde = rango ? ahora - rango * 3600000 : primero;
   const enRango = todos.map(r => r.filter(f => f.t >= desde));
-  const series = rango && rango <= 168 ? enRango : enRango.map(porDia);
-  const dia = t => new Date(t).toLocaleDateString("es-PE", { day: "2-digit", month: "2-digit" });
+  const porHoras = rango && rango <= 168, series = porHoras ? enRango : enRango.map(porDia);
+  const hay = series.flat().map(f => f.t), ini = hay.length ? Math.min(...hay) : desde, fin = hay.length ? Math.max(...hay) : ahora;  // el eje va de la primera a la ultima lectura: asi no queda apretado en una esquina
+  const dia = t => new Date(t).toLocaleString("es-PE", porHoras ? { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false } : { day: "2-digit", month: "2-digit" });
   document.querySelectorAll("#rango button").forEach(b => b.setAttribute("aria-pressed", Number(b.dataset.h) === rango));
   document.getElementById("registroNota").textContent = enRango.some(r => r.length) ? ""
     : "Todavía no hay registro en ese periodo: se guarda una fila por hora mientras el equipo está encendido y tiene la hora.";
   document.getElementById("registroGraficos").innerHTML = PARAMETROS.map(p =>
-    '<div class="graf">' + tituloGrafico(p) + trazar(p, series, desde, ahora, [dia(desde), "hoy"]) + "</div>").join("");
+    '<div class="graf">' + tituloGrafico(p) + trazar(p, series, ini, fin, [dia(ini), dia(fin)], porHoras ? 2 * 3600000 : 2 * 86400000) + "</div>").join("");
   const extremo = (valores, f) => { const v = valores.filter(x => !sinDato(x)); return v.length ? f(...v) : null; };
   document.getElementById("resumenFilas").innerHTML = nodos.map(n => {
     const r = enRango[n.i];
@@ -1106,7 +1118,7 @@ function pintarNorma() {
   document.getElementById("normaFilas").innerHTML = NORMA.map(r =>
     "<tr><td><b>" + r.nombre + ":</b> " + (r.min !== undefined ? "de " + r.min + " a " + r.max : "hasta " + r.max) + "<small>" + r.cat + "</small></td>" +
     nodos.map(n => {
-      const v = responde(n) ? n.dato[r.id] : null;
+      const v = responde(n) && n.motivo !== "prueba" ? n.dato[r.id] : null;
       if (sinDato(v)) return '<td><span class="chip gris">Sin dato</span></td>';
       const cumple = (r.min === undefined || v >= r.min) && v <= r.max;
       return '<td><span class="chip' + (cumple ? "" : " mal") + '">' + (cumple ? "Cumple" : "No cumple") + "</span><small>" + fmt(v, r.id === "ph" ? 2 : 0) + "</small></td>";
@@ -1138,8 +1150,9 @@ function pintarMapa() {
       // dos fondos: la foto de satelite (se ve el rio) y el plano de calles
       const satelite = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
                                    { maxZoom: 18, attribution: "Imágenes © Esri" }).addTo(mapa);
-      const calles = L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
-                                 { maxZoom: 19, subdomains: "abcd", attribution: "© OpenStreetMap, © CARTO" });
+      // calles tmb de esri: carto ahora pide clave y sin ella entrega una imagen de aviso q parece cargada bien
+      const calles = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
+                                 { maxZoom: 19, attribution: "Mapa © Esri" });
       L.control.layers({ "Satélite": satelite, "Calles": calles }, null, { collapsed: false }).addTo(mapa);
       pintarMapa();
     };
@@ -1182,7 +1195,7 @@ async function exportarJuntos(cuales) {
     } else if (modo === "nube") {
       try {
         const vacio = v => (sinDato(v) ? "" : v);
-        (await nubeTodo("lecturas?select=fecha,temp,ph,ntu,ce,lat,lng&equipo=eq." + (n.i + 1) + "&order=fecha.asc")).forEach(f => {
+        (await nubeTodo("lecturas_validas?select=fecha,temp,ph,ntu,ce,lat,lng&equipo=eq." + (n.i + 1) + "&order=fecha.asc")).forEach(f => {
           const d = new Date(f.fecha);
           filas.push(quien.concat(d.toLocaleDateString("sv"), d.toLocaleTimeString("es-PE", { hour12: false }),
                                   vacio(f.temp), vacio(f.ph), vacio(f.ntu), vacio(f.ce), vacio(f.lat), vacio(f.lng), "nube").join(";"));
@@ -1197,7 +1210,7 @@ async function exportarJuntos(cuales) {
           if (!col || c.length < 5) return;
           const de = titulo => col[titulo] === undefined ? "" : c[col[titulo]] || "";
           const ph = de("pH") !== "" && (de("pH") < 0 || de("pH") > 14) ? "" : de("pH");
-          const ntu = de("turbidez_V") !== "" && de("turbidez_V") <= 0.3 ? "" : de("turbidez_NTU");
+          const ntu = de("turbidez_V") !== "" && de("turbidez_V") <= 0.7 ? "" : de("turbidez_NTU");
           filas.push(quien.concat(de("fecha"), de("hora"), de("temperatura_C") <= -100 ? "" : de("temperatura_C"), ph, ntu,
                                   de("conductividad_uS"), de("latitud"), de("longitud"), de("origen")).join(";"));
         });
@@ -1209,6 +1222,11 @@ async function exportarJuntos(cuales) {
   if (filas.length > 2) descargar("rio_san_juan_" + nombre + "_" + new Date().toLocaleDateString("sv") + ".csv", filas.join("\r\n") + "\r\n");
   nota.textContent = (filas.length > 2 ? "Listo: " + (filas.length - 2) + " lecturas en un archivo." : "No se pudo bajar nada.") +
                      (faltan.length ? " Sin datos de: " + faltan.join(", ") + "." : "");
+}
+
+function haceCuanto(t) {
+  const min = Math.max(1, Math.round((Date.now() - t) / 60000));
+  return min < 60 ? "hace " + min + " min" : min < 2880 ? "hace " + Math.round(min / 60) + " h" : "hace " + Math.round(min / 1440) + " días";
 }
 
 // la frase de arriba: como estan los tres puntos - tambien va al titulo de la pestana
@@ -1224,10 +1242,18 @@ function pintarResumen() {
     texto = bien.length === 3 ? "Agua dentro de los límites en los 3 puntos"
           : "Agua dentro de los límites en " + bien.length + (bien.length > 1 ? " puntos" : " punto") + "; sin medición en " + (3 - bien.length);
   }
+  const enPrueba = nodos.filter(n => n.motivo === "prueba").length;
+  if (!mal.length && !bien.length && enPrueba) texto = enPrueba + (enPrueba > 1 ? " puntos" : " punto") + " en prueba: todavía no cuenta como medición del río";
+  const incompletos = nodos.filter(n => n.motivo === "sensores" && n.alertas === null).length;
+  if (!mal.length && !bien.length && incompletos) texto = "Faltan lecturas en " + incompletos + (incompletos > 1 ? " puntos" : " punto") + ": todavía no se puede decir cómo está el agua";
   if (modo === "nube" && !CONFIG.urlNube) texto = "Esta página todavía no está conectada a la base de datos";
   document.getElementById("resumen").className = "resumen " + clase;
   document.getElementById("resumenTexto").textContent = texto;
-  document.title = (mal.length ? "⚠ " + mal.length + " en alerta · " : "") + "Río San Juan de Rancas";
+  const callados = nodos.filter(n => n.alertas === null && n.motivo === "senal" && n.callado && n.vistoEn);
+  const aviso = document.getElementById("avisoSenal");
+  aviso.hidden = !callados.length;
+  aviso.textContent = "⚠ Dejó de enviar datos: " + callados.map(n => n.titulo + " (" + haceCuanto(n.vistoEn) + ")").join(", ");
+  document.title = (callados.length ? "⚠ Sin señal · " : "") + (mal.length ? "⚠ " + mal.length + " en alerta · " : "") + "Río San Juan de Rancas";
   document.getElementById("equipo").textContent = "3 puntos de monitoreo, " + nodos.filter(responde).length + " con señal";
   document.getElementById("graficos").innerHTML = PARAMETROS.map(grafico).join("");
   pintarTabla();
@@ -1254,13 +1280,13 @@ function pintarTabla() {
 
   let h = fila("Estado del agua", "", n => {
     const mide = n.alertas !== null, mal = mide && n.alertas.length > 0;
-    const texto = !mide ? (n.motivo === "sensores" ? "Sin sensores" : "Sin señal") : mal ? n.alertas.map(a => ANIMOS[a]).join(" y ") : "Agua bien";
+    const texto = !mide ? textoSinMedir(n) : mal ? n.alertas.map(a => ANIMOS[a]).join(" y ") : "Agua bien";
     return celda(n, '<span class="chip' + (mal ? " mal" : mide ? "" : " gris") + '">' + texto + "</span>");
   });
   PARAMETROS.forEach(p => {
     h += fila(p.nombre + (p.unidad ? " (" + p.unidad + ")" : ""), NOTAS[p.id], n => {
       const v = responde(n) ? n.dato[p.id] : null;
-      return celda(n, fmt(v, p.dec), sinDato(v) ? "vacia" : fueraDeRango(p.id, v) ? "fuera" : LIMITES[p.id] ? "dentro" : "");
+      return celda(n, fmt(v, p.dec), sinDato(v) ? "vacia" : n.motivo === "prueba" ? "" : fueraDeRango(p.id, v) ? "fuera" : LIMITES[p.id] ? "dentro" : "");
     });
   });
   h += fila("Última lectura", "", n => celda(n, n.historial.length ? n.historial[n.historial.length - 1].hora : "—", "vacia"), "tecnica") +
@@ -1282,7 +1308,7 @@ function pintarPecera(n) {
   const d = responde(n) ? n.dato : {};
   n.pecera.classList.toggle("ok", n.alertas !== null && !n.problemas.length);
   n.pecera.classList.toggle("mal", n.alertas !== null && n.problemas.length > 0);
-  n.mini.innerHTML = PARAMETROS.map(p => "<span" + (fueraDeRango(p.id, d[p.id]) ? ' class="fuera"' : "") + "><b>" + fmt(d[p.id], p.dec) + "</b> " +
+  n.mini.innerHTML = PARAMETROS.map(p => "<span" + (n.motivo !== "prueba" && fueraDeRango(p.id, d[p.id]) ? ' class="fuera"' : "") + "><b>" + fmt(d[p.id], p.dec) + "</b> " +
                                          (p.unidad || p.nombre) + "</span>").join("");
 }
 
@@ -1296,11 +1322,12 @@ function pintarDetalle() {
   sem.classList.toggle("gris", !mide);
   sem.classList.toggle("mal", caso === "mal");
   document.getElementById("semTitulo").textContent = n.titulo + ": " +
-    { bien: "agua dentro de los límites", mal: "parámetro fuera de rango", sensores: "equipo encendido, sin sensores",
+    { bien: "agua dentro de los límites", mal: "parámetro fuera de rango", prueba: "lecturas de prueba", sensores: "equipo encendido, faltan lecturas",
       senal: n.dato ? "sin respuesta del equipo" : "sin señal" }[caso];
   document.getElementById("semDetalle").textContent =
     { bien: "Todos los parámetros medidos están en rango.", mal: "Fuera de rango: " + n.problemas.join(" y ") + ".",
-      sensores: "Llegan datos del equipo, pero ni el pH ni la turbidez traen una lectura válida.",
+      prueba: "Llegan datos del equipo, pero no hay una salida al río registrada para esta hora.",
+      sensores: "Llegan datos del equipo, pero falta una lectura válida de pH o de turbidez.",
       senal: ultima ? "Último dato recibido a las " + ultima + ". Los valores de abajo pueden estar desactualizados." : "Todavía no llegó ningún dato de este punto." }[caso];
   document.getElementById("explica").textContent =
     caso === "mal" ? n.alertas.map(a => EXPLICA[a]).join(" ") : caso === "bien" ? EXPLICA[0] : SIN_MEDICION[caso];
@@ -1310,6 +1337,7 @@ function pintarDetalle() {
     const v = d[p.id];
     const mal = fueraDeRango(p.id, v);
     const chip = sinDato(v) ? '<span class="chip gris">' + (responde(n) ? "Sin sensor" : "Pendiente") + "</span>"
+               : n.motivo === "prueba" ? '<span class="chip gris">En prueba</span>'
                : LIMITES[p.id] ? '<span class="chip' + (mal ? ' mal' : '') + '">' + (mal ? "Fuera de rango" : "Normal") + '</span>' : "";
     return '<article class="tarjeta" style="--c:' + p.color + '"><div class="nombre"><span>' + p.nombre + '</span>' + chip + '</div>' +
            '<div class="valor">' + fmt(v, p.dec) + '<small>' + p.unidad + '</small></div>' + medidor(p, v) +
@@ -1318,9 +1346,10 @@ function pintarDetalle() {
 
   document.getElementById("tituloTabla").textContent = "Últimas lecturas · " + n.titulo;
   document.getElementById("filas").innerHTML = n.historial.slice(-8).reverse().map(h => {
-    const mal = fueraDeRango("ph", h.ph) || fueraDeRango("ntu", h.ntu), nada = sinDato(h.ph) && sinDato(h.ntu);
+    if (n.motivo === "prueba") return "<tr><td>" + h.hora + "</td><td>" + fmt(h.temp, 1) + "</td><td>" + fmt(h.ph, 2) + "</td><td>" + fmt(h.ntu, 0) + "</td><td>" + fmt(h.ce, 0) + '</td><td><span class="chip gris">En prueba</span></td></tr>';
+    const mal = fueraDeRango("ph", h.ph) || fueraDeRango("ntu", h.ntu), nada = sinDato(h.ph) || sinDato(h.ntu);
     return "<tr><td>" + h.hora + "</td><td>" + fmt(h.temp, 1) + "</td><td>" + fmt(h.ph, 2) + "</td><td>" + fmt(h.ntu, 0) + "</td><td>" + fmt(h.ce, 0) +
-           '</td><td><span class="chip' + (mal ? " mal" : nada ? " gris" : "") + '">' + (mal ? "Alerta" : nada ? "Sin sensor" : "Normal") + "</span></td></tr>";
+           '</td><td><span class="chip' + (mal ? " mal" : nada ? " gris" : "") + '">' + (mal ? "Alerta" : nada ? "Falta dato" : "Normal") + "</span></td></tr>";
   }).join("");
 
   const si = (ok, txt) => '<span class="chip' + (ok ? "" : " gris") + '">' + txt + "</span>";
@@ -1374,6 +1403,7 @@ async function ciclo(n) {
     const d = limpiar(await leer(n));
     n.fallos = 0;
     n.dato = d;
+    if (modo !== "nube") n.vistoEn = Date.now();
     if (d.n === undefined || d.n !== n.ultimaN) { n.ultimaN = d.n; registrar(n, d, d.fecha ? new Date(d.fecha) : undefined); }
     if (n.i === propio && d.ips) ubicar(d.ips);
     // la luz, el aviso y la mascota salen de la misma regla
@@ -1381,11 +1411,14 @@ async function ciclo(n) {
     const alertas = [];
     if (fueraDeRango("ph", d.ph)) { n.problemas.push("pH " + fmt(d.ph, 2)); alertas.push(d.ph < LIMITES.ph[0] ? PH_BAJO : PH_ALTO); }
     if (fueraDeRango("ntu", d.ntu)) { n.problemas.push("turbidez " + fmt(d.ntu, 0) + " NTU"); alertas.push(AGUA_TURBIA); }
-    const sinSensores = sinDato(d.ph) && sinDato(d.ntu);
-    n.alertas = sinSensores ? null : alertas;
-    n.motivo = sinSensores ? "sensores" : "";
+    // "Agua bien" pide las dos lecturas: un dato que falta no es un dato bueno
+    const faltan = !alertas.length && (sinDato(d.ph) || sinDato(d.ntu));
+    const prueba = d.enSalida === false;  // solo la nube sabe de salidas: en la red local siempre cuenta
+    n.alertas = prueba || faltan ? null : alertas;
+    n.motivo = prueba ? "prueba" : faltan ? "sensores" : "";
   } catch (e) {
-    if (++n.fallos >= 3 || modo === "demo") { n.alertas = null; n.motivo = "senal"; }   // con un equipo real, un corte corto no cambia la pantalla
+    // en la nube un error de red es de quien mira, no del equipo: el aviso solo sale si la base confirma q dejo de subir
+    if (e.callado || ++n.fallos >= 3 || modo === "demo") { n.alertas = null; n.motivo = "senal"; n.callado = modo !== "nube" || !!e.callado; }   // con un equipo real, un corte corto no cambia la pantalla
   }
   pintarPecera(n);
   if (n.i === elegido) pintarDetalle();
@@ -1422,7 +1455,8 @@ function elegir(i) {
   boton.onclick = () => {
     sencilla = !sencilla; poner();
     try { localStorage.setItem("vista", sencilla ? "sencilla" : "tecnica"); } catch (e) {}
-    if (mapa) mapa.invalidateSize();
+    // si el mapa nacio oculto quedo en zoom 0: al mostrarlo hay q volver a encuadrar los puntos
+    if (mapa) { mapa.invalidateSize(); mapaVisto = mapaLugares = ""; pintarMapa(); }
   };
   const queEs = document.getElementById("queEs");
   document.getElementById("acerca").onclick = () => queEs.showModal();
@@ -1477,7 +1511,9 @@ function elegir(i) {
   } else if (modo === "nube") {
     // los equipos suben cada 20 s: basta con mirar cada 10 s (y asi la nube gasta menos)
     CONFIG.cadaMs = 10000;
-    SIN_MEDICION.senal = "Este equipo no ha subido datos en los últimos " + MINUTOS_SIN_DATOS + " minutos: puede estar apagado o sin internet.";
+    document.getElementById("notaNorma").hidden = false;
+    document.getElementById("notaRegistro").textContent = "Solo cuentan las lecturas de salidas al río registradas. El último día y la última semana se ven hora por hora; el mes y todo, día por día.";
+    SIN_MEDICION.senal = "Este equipo no ha subido datos en el último minuto: puede estar apagado o sin internet.";
     if (!CONFIG.urlNube) document.getElementById("resumenTexto").textContent = "Esta página todavía no está conectada a la base de datos";
     await Promise.all(nodos.map(cargarHistorial));
   } else if (modo === "local") {

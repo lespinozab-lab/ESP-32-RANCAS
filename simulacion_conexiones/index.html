@@ -798,7 +798,7 @@ function hora(t){ const s = t / 1000; return String(Math.floor(s / 60)).padStart
 function nota(s){ const d = document.createElement('div'); d.innerHTML = '<b>' + hora(sim.t) + '</b>'; d.appendChild(document.createTextNode(s)); reg.appendChild(d);
   while (reg.children.length > 120) reg.removeChild(reg.firstChild); reg.scrollTop = reg.scrollHeight; document.getElementById('msg').textContent = s; }
 
-const phValido = () => sim.ph >= 0 && sim.ph <= 14, turbValida = () => sim.turbV > 0.3;
+const phValido = () => sim.ph >= 0 && sim.ph <= 14, turbValida = () => sim.turbV > 0.7;
 const cuantosMiden = () => (sim.temp > -100) + phValido() + turbValida(); // la conductividad no cuenta
 const oledSeVe = () => sim.t - sim.oledPedida < OLED_SE_APAGA_MS || sim.t < sim.avisoHasta;
 function leerSensores(){

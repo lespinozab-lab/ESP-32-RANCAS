@@ -179,7 +179,8 @@ TinyGPSPlus gps;
 // pH fuera de 0-14 o turbidez sin tension = sensor desconectado, no una medicion
 // la pantalla y la pagina ponen "sin dato" en vez de una alarma falsa
 bool phValido() { return ph >= 0 && ph <= 14; }
-bool turbValida() { return turbV > 0.3f; }
+//0.7 V: con el pin suelto flota hasta ~0.35 V y con sensor,aun en agua muy turbia,no baja de ~1.2 V
+bool turbValida() { return turbV > 0.7f; }
 
 // cuanta memoria interna esta usada, usedBytes() recorre TODO el sistema de archivos y tarda,
 // osea solo se mide despues de escribir (medirMemoria) y los demas (pantalla, /datos) leen lo guardado
@@ -417,7 +418,7 @@ void calTerminar() {
     if (pendiente >= 150 && pendiente <= 190) { cal.mvNeutro = calTomado[0]; cal.mvAcido = calTomado[1]; calResultado |= 1; }
     else calResultado |= 4;
   }
-  if (calHay[2] && calTomado[2] > 0.3f) { cal.turbClaraV = calTomado[2]; calResultado |= 2; }
+  if (calHay[2] && calTomado[2] > 0.7f) { cal.turbClaraV = calTomado[2]; calResultado |= 2; }
   if (calResultado & 3) {
     ajustes.begin("cal", false);
     ajustes.putFloat("mvNeutro", cal.mvNeutro); ajustes.putFloat("mvAcido", cal.mvAcido); ajustes.putFloat("claraV", cal.turbClaraV);

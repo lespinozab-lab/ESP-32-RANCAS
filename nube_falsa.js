@@ -2,11 +2,12 @@
 // uso: node nube_falsa.js [puerto]      (por defecto 8799)
 // despues: python nube/preparar_nube.py --prueba http://localhost:8799 clave-de-prueba salida.html
 //para dejar callado a un equipo (q no "suba" nada): /__callar?n=2
+//para q un equipo quede fuera de toda salida al rio: /__prueba?n=2
 const http = require("http");
 
 const puerto = Number(process.argv[2] || 8799);
 const inicio = Date.now();
-const callados = new Set();
+const callados = new Set(), enPrueba = new Set();
 let siguienteId = 1;
 
 // lecturas inventadas cada 20 s de los ultimos 2 dias, como las que subirian los equipos
@@ -34,7 +35,7 @@ function filtrar(filas, q) {
 
 function resumenPorHora(equipo) {
   const horas = new Map();
-  lecturas.filter(f => f.equipo === equipo).forEach(f => {
+  lecturas.filter(f => f.equipo === equipo && !enPrueba.has(equipo)).forEach(f => {
     const lima = new Date(new Date(f.fecha).getTime() - 5 * 3600000).toISOString().slice(0, 13) + ":00:00";
     if (!horas.has(lima)) horas.set(lima, []);
     horas.get(lima).push(f);
@@ -49,12 +50,15 @@ http.createServer((req, res) => {
   const cabeceras = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "apikey, authorization, content-type" };
   if (req.method === "OPTIONS") { res.writeHead(204, cabeceras); res.end(); return; }
   if (url.pathname === "/__callar") { callados.add(Number(q.get("n"))); res.writeHead(200, cabeceras); res.end("ok"); return; }
+  if (url.pathname === "/__prueba") { enPrueba.add(Number(q.get("n"))); res.writeHead(200, cabeceras); res.end("ok"); return; }
   if (!req.headers.apikey) { res.writeHead(401, cabeceras); res.end('{"message":"No API key found in request"}'); return; }
   let cuerpo;
   if (url.pathname === "/rest/v1/ultima_lectura") {
-    cuerpo = [1, 2, 3].map(e => lecturas.filter(f => f.equipo === e).pop());
+    cuerpo = [1, 2, 3].map(e => ({ ...lecturas.filter(f => f.equipo === e).pop(), en_salida: !enPrueba.has(e) }));
   } else if (url.pathname === "/rest/v1/lecturas") {
     cuerpo = filtrar(lecturas, q);
+  } else if (url.pathname === "/rest/v1/lecturas_validas") {
+    cuerpo = filtrar(lecturas.filter(f => !enPrueba.has(f.equipo)), q);
   } else if (url.pathname === "/rest/v1/rpc/resumen_por_hora") {
     const desde = Number(q.get("offset") || 0);
     cuerpo = resumenPorHora(Number(q.get("p_equipo"))).slice(desde, desde + Math.min(1000, Number(q.get("limit") || 1000)));

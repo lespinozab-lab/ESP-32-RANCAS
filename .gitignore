@@ -1,6 +1,8 @@
 # claves reales: nunca a GitHub
 claves.h
 claves_nube.h
+# lo genera preparar_nube.py y trae la clave secreta de cada equipo
+nube/1_estructura_supabase.sql
 .env
 # generados / locales
 *.log
@@ -8,3 +10,8 @@ claves_nube.h
 __pycache__/
 node_modules/
 build/
+# salen de capturas_simulacion.py, se regeneran
+simulacion_conexiones/*.png
+simulacion_conexiones/*.pdf
+# copia vieja de la pagina (la buena es index.html)
+mascota animada.html

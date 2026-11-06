@@ -7,6 +7,7 @@
 # uso: python preparar_nube.py                        pide la direccion y la clave (Enter = dejar las q ya estan)
 #      python preparar_nube.py URL CLAVE_PUBLICA
 #      python preparar_nube.py --prueba URL CLAVE SALIDA.html   nomas arma una pagina de prueba (no toca nada mas)
+#      python preparar_nube.py --claves-nuevas            cambia la clave secreta de los 3 equipos (si se filtraron)
 import re
 import secrets
 import sys
@@ -80,6 +81,40 @@ grant select on public.lecturas to anon, authenticated;
 drop policy if exists lectura_publica on public.lecturas;
 create policy lectura_publica on public.lecturas for select to anon, authenticated using (true);
 
+-- las salidas al rio: lo q cae aca adentro cuenta como medicion, lo demas son pruebas
+-- se llena a mano en Table Editor, con hora de peru, fin vacio = todavia esta en el rio
+create table if not exists public.salidas (
+  id bigint generated always as identity primary key,
+  equipo smallint not null references public.equipos (numero),
+  inicio timestamp not null,
+  fin timestamp,
+  lugar text,
+  notas text,
+  check (fin is null or fin > inicio)
+);
+alter table public.salidas enable row level security;
+revoke all on public.salidas from anon, authenticated;
+grant select on public.salidas to anon, authenticated;
+drop policy if exists salida_publica on public.salidas;
+create policy salida_publica on public.salidas for select to anon, authenticated using (true);
+
+-- lo crudo sigue intacto en lecturas, esta vista es lo q de verdad se midio en el rio:
+-- solo lecturas dentro de una salida y sin los valores imposibles (sensor suelto o saturado)
+create or replace view public.lecturas_validas with (security_invoker = true) as
+  select l.id, l.equipo, l.fecha,
+         case when l.temp between -50 and 60 then l.temp end as temp,
+         case when l.ph between 0 and 14 then l.ph end as ph,
+         case when l.ntu between 0 and 2999 then l.ntu end as ntu,
+         case when l.ce > 0 then l.ce end as ce,
+         l.lat, l.lng, l.gps, l.encendido
+  from public.lecturas l
+  where exists (
+    select 1 from public.salidas s
+    where s.equipo = l.equipo and l.fecha at time zone 'America/Lima' >= s.inicio
+      and (s.fin is null or l.fecha at time zone 'America/Lima' <= s.fin)
+  );
+grant select on public.lecturas_validas to anon, authenticated;
+
 --los equipos escriben solo con esta funcion y solo si mandan su clave
 create or replace function public.registrar_lectura(
   p_equipo smallint, p_clave text,
@@ -105,7 +140,12 @@ grant execute on function public.registrar_lectura(smallint, text, real, real, r
 -- la ultima lectura de cada equipo (la pagina la pide cada 10 seg), se busca equipo x equipo
 -- en el indice asi tarda igual con mil filas q con millones
 create or replace view public.ultima_lectura with (security_invoker = true) as
-  select l.id, l.equipo, l.fecha, l.temp, l.ph, l.ntu, l.ce, l.lat, l.lng, l.gps, l.encendido
+  select l.id, l.equipo, l.fecha, l.temp, l.ph, l.ntu, l.ce, l.lat, l.lng, l.gps, l.encendido,
+         exists (
+           select 1 from public.salidas s
+           where s.equipo = l.equipo and l.fecha at time zone 'America/Lima' >= s.inicio
+             and (s.fin is null or l.fecha at time zone 'America/Lima' <= s.fin)
+         ) as en_salida
   from (values (1::smallint), (2::smallint), (3::smallint)) as e (numero)
   cross join lateral (
     select * from public.lecturas where equipo = e.numero order by fecha desc limit 1
@@ -122,7 +162,7 @@ set search_path = public
 as $$
   select date_trunc('hour', l.fecha at time zone 'America/Lima'), count(*), avg(l.temp), avg(l.ph), min(l.ph), max(l.ph),
          avg(l.ntu), max(l.ntu), avg(l.ce)
-  from public.lecturas l
+  from public.lecturas_validas l
   where l.equipo = p_equipo and l.fecha >= p_desde
   group by 1
   order by 1;
@@ -155,6 +195,9 @@ if __name__ == "__main__":
         armar_pagina(limpiar_url(sys.argv[2]), sys.argv[3], Path(sys.argv[4]))
         sys.exit(0)
     c = leer_claves()
+    if sys.argv[1:2] == ["--claves-nuevas"]:
+        sys.argv.pop(1)
+        c["equipos"] = [secrets.token_urlsafe(18) for _ in MASCOTAS]
     if len(sys.argv) >= 3:
         c["url"], c["publica"] = limpiar_url(sys.argv[1]), sys.argv[2].strip()
     else:
